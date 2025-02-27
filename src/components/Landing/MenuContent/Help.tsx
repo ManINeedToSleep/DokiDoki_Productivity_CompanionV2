@@ -28,6 +28,16 @@ const HELP_SECTIONS: HelpSection[] = [
     }
   },
   {
+    id: 'feedback',
+    title: "Share Your Thoughts",
+    description: "We'd love to hear your feedback! Share your experience, suggestions, or just say hello.",
+    action: {
+      label: "Send Feedback",
+      path: "mailto:bguna0050@launchpadphilly.org?subject=DDPC%20Feedback",
+      isExternal: true
+    }
+  },
+  {
     id: 'bugs',
     title: "Found a Bug?",
     description: "Help us improve DDPC by reporting issues or contributing to our open source project!",
