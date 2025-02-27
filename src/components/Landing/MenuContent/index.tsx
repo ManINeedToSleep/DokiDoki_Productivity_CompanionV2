@@ -10,13 +10,14 @@ const Extra = dynamic(() => import('./Extra'));
 
 interface MenuContentProps {
   selectedItem: string;
+  onCharacterSelect: (characterId: string | null) => void;
 }
 
-export default function MenuContent({ selectedItem }: MenuContentProps) {
+export default function MenuContent({ selectedItem, onCharacterSelect }: MenuContentProps) {
   const renderContent = () => {
     switch (selectedItem) {
       case 'new-game':
-        return <NewGame />;
+        return <NewGame onCharacterSelect={onCharacterSelect} />;
       case 'load-game':
         return <LoadGame />;
       case 'options':

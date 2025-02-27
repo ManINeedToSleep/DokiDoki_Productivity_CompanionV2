@@ -15,7 +15,11 @@ const MENU_ITEMS = [
   { id: 'extra', label: 'Extra' },
 ];
 
-export default function MenuOption() {
+interface MenuOptionProps {
+  onCharacterSelect: (characterId: string | null) => void;
+}
+
+export default function MenuOption({ onCharacterSelect }: MenuOptionProps) {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
 
@@ -38,15 +42,15 @@ export default function MenuOption() {
   return (
     <>
       <div className="fixed inset-0 w-screen h-screen">
-        {/* Background Image - adjusted to hug left side */}
+        {/* Background Image - adjusted to be responsive */}
         <div className="relative h-full w-full flex justify-start">
           <Image
             src={imagePaths.backgrounds.menuOption}
             alt="Menu Options"
             fill
             quality={100}
-            sizes="100vw"
-            className="object-contain object-left"
+            sizes="(max-width: 768px) 100vw, (max-width: 1200px) 75vw, 50vw"
+            className="object-contain object-left max-h-screen"
             priority
           />
         </div>
@@ -75,7 +79,10 @@ export default function MenuOption() {
           </div>
         </div>
       </div>
-      <MenuContent selectedItem={MENU_ITEMS[selectedIndex].id} />
+      <MenuContent 
+        selectedItem={MENU_ITEMS[selectedIndex].id} 
+        onCharacterSelect={onCharacterSelect}
+      />
     </>
   );
 }
