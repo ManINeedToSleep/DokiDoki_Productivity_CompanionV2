@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react";
 
 const PolkaDotBackground = ({
   dotColor = "#F5C0DF",
-  backgroundColor = "#ffffff",
+  backgroundColor = "white",
   dotSize = 60,
   spacing = 120,
 }) => {
@@ -25,10 +25,9 @@ const PolkaDotBackground = ({
 
   const calculateDots = () => {
     const cols = Math.ceil(dimensions.width / spacing) + 2;
-    const rows = Math.ceil(dimensions.height / spacing) * 3; // Triple the rows
+    const rows = Math.ceil(dimensions.height / spacing) * 3;
     const dots = [];
 
-    // Start from negative height to have dots above viewport
     for (let y = -Math.ceil(dimensions.height / spacing); y < rows; y++) {
       for (let x = 0; x < cols; x++) {
         const offsetX = y % 2 === 0 ? 0 : spacing / 2;
@@ -43,7 +42,7 @@ const PolkaDotBackground = ({
 
   return (
     <div
-      className="fixed inset-0"
+      className="fixed inset-0 pointer-events-none"
       style={{
         backgroundColor,
         overflow: 'hidden',
@@ -63,8 +62,8 @@ const PolkaDotBackground = ({
                 borderRadius: '50%',
                 left: position.left,
                 top: position.top,
-                opacity: 0.8,
-                boxShadow: '0 0 10px rgba(255, 182, 193, 0.3)',
+                opacity: 0.4,
+                boxShadow: '0 0 10px rgba(255, 182, 193, 0.2)',
               }}
             />
           ))}

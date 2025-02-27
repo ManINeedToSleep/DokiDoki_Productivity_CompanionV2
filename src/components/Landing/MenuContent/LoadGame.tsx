@@ -3,7 +3,7 @@
 import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import Button from "@/components/Common/Button/Button";
-import Card from "@/components/Common/Card/Card";
+import Card from "@/components/Common/Card/LandingCard";
 
 export default function LoadGame() {
   const router = useRouter();

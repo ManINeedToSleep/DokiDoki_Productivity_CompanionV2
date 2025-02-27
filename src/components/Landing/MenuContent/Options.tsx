@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import Card from "@/components/Common/Card/Card";
+import Card from "@/components/Common/Card/LandingCard";
 
 interface Testament {
   id: string;

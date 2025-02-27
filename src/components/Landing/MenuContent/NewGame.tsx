@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import Card from "@/components/Common/Card/Card";
+import Card from "@/components/Common/Card/LandingCard";
 import { imagePaths } from "@/components/Common/Paths/ImagePath";
 import Button from "@/components/Common/Button/Button";
 import { useRouter } from "next/navigation";
@@ -61,7 +61,7 @@ export default function NewGame({ onCharacterSelect }: NewGameProps) {
 
   const handleStartJourney = () => {
     if (selectedCharacter) {
-      router.push('/auth?mode=signup');
+      router.push(`/auth?mode=signup&companion=${selectedCharacter}`);
     }
   };
 

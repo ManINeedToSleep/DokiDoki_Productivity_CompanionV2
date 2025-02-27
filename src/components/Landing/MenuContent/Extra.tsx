@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import Card from "@/components/Common/Card/Card";
+import Card from "@/components/Common/Card/LandingCard";
 
 export default function Extra() {
   return (
