@@ -159,17 +159,3 @@ interface UserDocument {
     - dialogue
     - rewards
 ```
-
-This structure supports:
-1. Comprehensive user progress tracking
-2. Companion relationship development
-3. Achievement and goal systems
-4. Flexible dialogue system
-5. Statistics for analytics
-6. Future expandability
-
-Would you like me to:
-1. Add more specific fields?
-2. Create example data?
-3. Add validation rules?
-4. Explain any part in detail?
