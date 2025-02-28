@@ -12,9 +12,9 @@ const navItems = [
   { label: 'Timer', icon: <FaClock size={20} />, path: '/dashboard/timer' },
   { label: 'Goals', icon: <FaTrophy size={20} />, path: '/dashboard/goals' },
   { label: 'Stats', icon: <FaChartBar size={20} />, path: '/dashboard/statistics' },
-  { label: 'Achievements', icon: <FaTrophy size={20} />, path: '/dashboard/achievements' },
   { label: 'Chat', icon: <FaComments size={20} />, path: '/dashboard/chat' },
   { label: 'Settings', icon: <FaCog size={20} />, path: '/dashboard/settings' },
+  { label: 'Achievements', icon: <FaTrophy size={20} />, path: '/dashboard/achievements' },
 ] as const;
 
 function TimerNav() {

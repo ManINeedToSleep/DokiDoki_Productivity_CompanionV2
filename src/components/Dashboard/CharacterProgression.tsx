@@ -4,8 +4,6 @@ import { motion } from "framer-motion";
 import DashboardCard from "@/components/Common/Card/DashboardCard";
 import { formatTime } from "@/lib/utils/timeFormat";
 import type { UserDocument } from "@/lib/firebase/user";
-import { checkCompanionAchievements } from '@/lib/firebase/achievements';
-import { useEffect } from "react";
 
 interface CharacterProgressionProps {
   userData: UserDocument | null;
@@ -21,12 +19,6 @@ export default function CharacterProgression({ userData }: CharacterProgressionP
   const companionName = selectedCompanion
     ? selectedCompanion.charAt(0).toUpperCase() + selectedCompanion.slice(1)
     : "Unknown";
-
-  useEffect(() => {
-    if (userData?.base?.uid && selectedCompanion && affinityLevel) {
-      checkCompanionAchievements(userData.base.uid, selectedCompanion, affinityLevel);
-    }
-  }, [userData?.base?.uid, selectedCompanion, affinityLevel]);
 
   return (
     <DashboardCard>

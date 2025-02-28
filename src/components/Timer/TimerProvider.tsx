@@ -2,9 +2,9 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, useMemo } from "react";
 import { useUserData } from "@/hooks/useUserData";
-import { doc, increment, writeBatch } from "firebase/firestore";
+import { updateGoalProgress } from "@/lib/firebase/goals";
+import { updateDoc, doc, increment } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { checkAllAchievements, checkSessionAchievements, checkTimeBasedAchievements } from '@/lib/firebase/achievements';
 
 type TimerMode = 'work' | 'shortBreak' | 'longBreak';
 
@@ -32,8 +32,7 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
   const [time, setTime] = useState(25 * 60);
   const [isRunning, setIsRunning] = useState(false);
   const [sessionsCompleted, setSessionsCompleted] = useState(0);
-  const [localTimeTracked, setLocalTimeTracked] = useState(0);
-  const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
+  const [lastUpdateTime, setLastUpdateTime] = useState<number | null>(null);
   
   const settings = useMemo(() => ({
     workDuration: userData?.settings?.timerSettings?.workDuration || 25,
@@ -42,94 +41,93 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
   }), [userData?.settings?.timerSettings]);
 
   const updateGoals = useCallback(async (secondsCompleted: number) => {
-    if (!userData?.base?.uid || secondsCompleted < 60) return;
+    if (!userData?.base?.uid) return;
     
-    const minutesCompleted = Math.floor(secondsCompleted / 60);
-    const batch = writeBatch(db);
-    const userRef = doc(db, 'users', userData.base.uid);
-
-    // Stats updates (in seconds)
-    batch.update(userRef, {
+    // Update system stats in seconds
+    await updateDoc(doc(db, 'users', userData.base.uid), {
       'focusStats.todaysFocusTime': increment(secondsCompleted),
       'focusStats.totalFocusTime': increment(secondsCompleted),
-      'focusStats.weeklyFocusTime': increment(secondsCompleted),
+      'focusStats.weeklyFocusTime': increment(secondsCompleted)
     });
 
-    // Goal updates (in minutes)
-    const activeGoals = userData.goals?.list || [];
-    activeGoals.forEach(goal => {
-      batch.update(userRef, {
-        [`goals.list.${goal.id}.currentMinutes`]: increment(1)
-      });
-    });
-
-    await batch.commit();
-    
-    // Achievement checks
-    await Promise.all([
-      checkAllAchievements(userData.base.uid, {
-        ...userData.focusStats,
-        totalFocusTime: (userData.focusStats.totalFocusTime || 0) + secondsCompleted,
-        completedGoals: userData.goals?.list.filter(goal => goal.completed).length || 0
-      }),
-      checkSessionAchievements(userData.base.uid, secondsCompleted),
-      sessionStartTime && checkTimeBasedAchievements(
-        userData.base.uid,
-        sessionStartTime,
-        minutesCompleted
-      )
-    ].filter(Boolean));
+    // Only update goals if we have at least a minute
+    const minutesCompleted = Math.floor(secondsCompleted / 60);
+    if (minutesCompleted > 0) {
+      // Update user-created goals
+      const activeGoals = userData.goals?.list || [];
+      for (const goal of activeGoals) {
+        await updateGoalProgress(
+          userData.base.uid,
+          goal.id,
+          goal.currentMinutes + minutesCompleted
+        );
+      }
+    }
 
     await refreshUserData();
-  }, [userData, refreshUserData, sessionStartTime]);
+  }, [userData, refreshUserData]);
 
   useEffect(() => {
-    if (!isRunning) return;
+    if (!isRunning || !userData?.base?.uid) return;
+
+    const handleTimerComplete = async () => {
+      setIsRunning(false);
+      
+      if (mode === 'work' && lastUpdateTime) {
+        const secondsElapsed = Math.floor((Date.now() - lastUpdateTime) / 1000);
+        await updateGoals(secondsElapsed);
+        setLastUpdateTime(null);
+        setSessionsCompleted(prev => prev + 1);
+        
+        if (sessionsCompleted % 4 === 3) {
+          setMode('longBreak');
+          setTime(settings.longBreakDuration * 60);
+        } else {
+          setMode('shortBreak');
+          setTime(settings.shortBreakDuration * 60);
+        }
+      } else {
+        setMode('work');
+        setTime(settings.workDuration * 60);
+      }
+    };
+
+    if (isRunning && mode === 'work' && !lastUpdateTime) {
+      setLastUpdateTime(Date.now());
+    }
 
     const timer = setInterval(() => {
-      setTime(prev => {
+      setTime((prev) => {
         if (prev <= 1) {
-          setIsRunning(false);
-          if (mode === 'work') {
-            // Don't update goals here - it will be handled by pauseTimer
-            setSessionsCompleted(prev => prev + 1);
-            if (sessionsCompleted % 4 === 3) {
-              setMode('longBreak');
-              setTime(settings.longBreakDuration * 60);
-            } else {
-              setMode('shortBreak');
-              setTime(settings.shortBreakDuration * 60);
-            }
-          } else {
-            setMode('work');
-            setTime(settings.workDuration * 60);
-          }
+          handleTimerComplete();
           return 0;
         }
-        // Just track time locally
-        setLocalTimeTracked(tracked => tracked + 1);
         return prev - 1;
       });
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [isRunning, mode, settings, sessionsCompleted, userData?.base?.uid]);
+  }, [isRunning, userData?.base?.uid, mode, settings, sessionsCompleted, updateGoals, lastUpdateTime]);
 
   const startTimer = () => {
     setIsRunning(true);
-    setSessionStartTime(new Date());
+    if (mode === 'work') {
+      setLastUpdateTime(Date.now());
+    }
   };
 
   const pauseTimer = async () => {
     setIsRunning(false);
-    if (localTimeTracked > 0) {
-      await updateGoals(localTimeTracked);
-      setLocalTimeTracked(0);
+    if (mode === 'work' && lastUpdateTime) {
+      const secondsElapsed = Math.floor((Date.now() - lastUpdateTime) / 1000);
+      await updateGoals(secondsElapsed);
+      setLastUpdateTime(null);
     }
   };
 
   const resetTimer = () => {
     setIsRunning(false);
+    setLastUpdateTime(null);
     setTime(settings[`${mode}Duration`] * 60);
   };
 

@@ -10,27 +10,23 @@ interface AchievementItemProps {
   title: string;
   description: string;
   icon: string;
+  isUnlocked: boolean;
   unlockedAt?: Date;
   index: number;
 }
 
-const AchievementItem = ({ title, description, icon, unlockedAt, index }: AchievementItemProps) => (
+const AchievementItem = ({ title, description, icon, isUnlocked, index }: AchievementItemProps) => (
   <motion.div
     initial={{ opacity: 0, y: 20 }}
     animate={{ opacity: 1, y: 0 }}
     transition={{ delay: index * 0.1 }}
-    className="bg-white/50 p-4 rounded-lg"
+    className={`bg-white/50 p-4 rounded-lg ${!isUnlocked ? 'opacity-50' : ''}`}
   >
     <div className="flex items-center gap-3">
-      <span className="text-2xl bg-pink-50 p-2 rounded-lg">{icon}</span>
-      <div className="flex-1">
+      <span className="text-2xl">{icon}</span>
+      <div>
         <h3 className="font-[Halogen] text-pink-800">{title}</h3>
         <p className="text-sm text-pink-600">{description}</p>
-        {unlockedAt && (
-          <p className="text-xs text-pink-400 mt-1">
-            Unlocked on {unlockedAt.toLocaleDateString()}
-          </p>
-        )}
       </div>
     </div>
   </motion.div>
@@ -46,16 +42,11 @@ export default function Achievements({ userData }: AchievementsProps) {
   const unlockedAchievements = new Set(userData.achievements?.map(a => a.id) || []);
   const recentAchievements = Object.values(ACHIEVEMENTS)
     .flatMap(category => Object.values(category))
-    .filter(achievement => unlockedAchievements.has(achievement.id))
     .map((achievement, index) => ({
       ...achievement,
-      unlockedAt: userData.achievements?.find(a => a.id === achievement.id)?.unlockedAt?.toDate(),
+      isUnlocked: unlockedAchievements.has(achievement.id),
       index
     }))
-    .sort((a, b) => {
-      if (!a.unlockedAt || !b.unlockedAt) return 0;
-      return b.unlockedAt.getTime() - a.unlockedAt.getTime();
-    })
     .slice(0, 4); // Show only 4 most recent achievements
 
   const totalAchievements = Object.values(ACHIEVEMENTS)
@@ -63,7 +54,7 @@ export default function Achievements({ userData }: AchievementsProps) {
 
   return (
     <DashboardCard>
-      <h2 className="text-2xl font-[Riffic] text-pink-700 mb-4">Recent Achievements</h2>
+      <h2 className="text-2xl font-[Riffic] text-pink-700 mb-4">Achievements</h2>
       <div className="space-y-4">
         <div className="flex justify-between items-center mb-2">
           <span className="text-pink-700 font-[Halogen]">Progress</span>
@@ -74,7 +65,7 @@ export default function Achievements({ userData }: AchievementsProps) {
 
         <div className="w-full h-2 bg-pink-100 rounded-full overflow-hidden">
           <motion.div
-            className="h-full bg-gradient-to-r from-pink-400 to-pink-500"
+            className="h-full bg-pink-500"
             initial={{ width: 0 }}
             animate={{ width: `${(unlockedAchievements.size / totalAchievements) * 100}%` }}
             transition={{ duration: 0.5 }}
@@ -82,18 +73,12 @@ export default function Achievements({ userData }: AchievementsProps) {
         </div>
 
         <div className="space-y-3 mt-4">
-          {recentAchievements.length > 0 ? (
-            recentAchievements.map((achievement) => (
-              <AchievementItem
-                key={achievement.id}
-                {...achievement}
-              />
-            ))
-          ) : (
-            <p className="text-pink-600 text-center py-4">
-              No achievements unlocked yet. Keep studying to earn some! 🎯
-            </p>
-          )}
+          {recentAchievements.map((achievement) => (
+            <AchievementItem
+              key={achievement.id}
+              {...achievement}
+            />
+          ))}
         </div>
       </div>
     </DashboardCard>
