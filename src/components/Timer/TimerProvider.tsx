@@ -32,6 +32,7 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
   const [time, setTime] = useState(25 * 60);
   const [isRunning, setIsRunning] = useState(false);
   const [sessionsCompleted, setSessionsCompleted] = useState(0);
+  const [lastUpdateTime, setLastUpdateTime] = useState<number | null>(null);
   
   const settings = useMemo(() => ({
     workDuration: userData?.settings?.timerSettings?.workDuration || 25,
@@ -39,25 +40,29 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
     longBreakDuration: userData?.settings?.timerSettings?.longBreakDuration || 15
   }), [userData?.settings?.timerSettings]);
 
-  const updateGoals = useCallback(async (minutesCompleted: number) => {
+  const updateGoals = useCallback(async (secondsCompleted: number) => {
     if (!userData?.base?.uid) return;
     
-    // Update user-created goals
-    const activeGoals = userData.goals?.list || [];
-    for (const goal of activeGoals) {
-      await updateGoalProgress(
-        userData.base.uid,
-        goal.id,
-        goal.currentMinutes + minutesCompleted
-      );
-    }
-
-    // Update system stats directly
+    // Update system stats in seconds
     await updateDoc(doc(db, 'users', userData.base.uid), {
-      'focusStats.todaysFocusTime': increment(minutesCompleted),
-      'focusStats.totalFocusTime': increment(minutesCompleted),
-      'focusStats.weeklyFocusTime': increment(minutesCompleted)
+      'focusStats.todaysFocusTime': increment(secondsCompleted),
+      'focusStats.totalFocusTime': increment(secondsCompleted),
+      'focusStats.weeklyFocusTime': increment(secondsCompleted)
     });
+
+    // Only update goals if we have at least a minute
+    const minutesCompleted = Math.floor(secondsCompleted / 60);
+    if (minutesCompleted > 0) {
+      // Update user-created goals
+      const activeGoals = userData.goals?.list || [];
+      for (const goal of activeGoals) {
+        await updateGoalProgress(
+          userData.base.uid,
+          goal.id,
+          goal.currentMinutes + minutesCompleted
+        );
+      }
+    }
 
     await refreshUserData();
   }, [userData, refreshUserData]);
@@ -68,8 +73,10 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
     const handleTimerComplete = async () => {
       setIsRunning(false);
       
-      if (mode === 'work') {
-        await updateGoals(settings.workDuration);
+      if (mode === 'work' && lastUpdateTime) {
+        const secondsElapsed = Math.floor((Date.now() - lastUpdateTime) / 1000);
+        await updateGoals(secondsElapsed);
+        setLastUpdateTime(null);
         setSessionsCompleted(prev => prev + 1);
         
         if (sessionsCompleted % 4 === 3) {
@@ -85,26 +92,42 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
       }
     };
 
+    if (isRunning && mode === 'work' && !lastUpdateTime) {
+      setLastUpdateTime(Date.now());
+    }
+
     const timer = setInterval(() => {
       setTime((prev) => {
         if (prev <= 1) {
           handleTimerComplete();
           return 0;
         }
-        if (prev % 60 === 0 && mode === 'work') {
-          updateGoals(1); // Update progress every minute
-        }
         return prev - 1;
       });
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [isRunning, userData?.base?.uid, mode, settings, sessionsCompleted, updateGoals]);
+  }, [isRunning, userData?.base?.uid, mode, settings, sessionsCompleted, updateGoals, lastUpdateTime]);
 
-  const startTimer = () => setIsRunning(true);
-  const pauseTimer = () => setIsRunning(false);
+  const startTimer = () => {
+    setIsRunning(true);
+    if (mode === 'work') {
+      setLastUpdateTime(Date.now());
+    }
+  };
+
+  const pauseTimer = async () => {
+    setIsRunning(false);
+    if (mode === 'work' && lastUpdateTime) {
+      const secondsElapsed = Math.floor((Date.now() - lastUpdateTime) / 1000);
+      await updateGoals(secondsElapsed);
+      setLastUpdateTime(null);
+    }
+  };
+
   const resetTimer = () => {
     setIsRunning(false);
+    setLastUpdateTime(null);
     setTime(settings[`${mode}Duration`] * 60);
   };
 

@@ -35,7 +35,7 @@ export default function QuickStats({ userData }: QuickStatsProps) {
   if (!userData?.focusStats) return null;
 
   const stats = userData.focusStats;
-  const todaysTotalSeconds = (stats.todaysFocusTime || 0) * 60;
+  const todaysTotalSeconds = stats.todaysFocusTime || 0;
   
   const statItems: StatItemProps[] = [
     {
@@ -46,7 +46,7 @@ export default function QuickStats({ userData }: QuickStatsProps) {
     },
     {
       label: "Total Focus Time",
-      value: formatTime((stats.totalFocusTime || 0) * 60),
+      value: formatTime(stats.totalFocusTime || 0),
       icon: "⭐",
       index: 1
     },
@@ -63,6 +63,10 @@ export default function QuickStats({ userData }: QuickStatsProps) {
       index: 3
     }
   ];
+
+  const dailyProgressMinutes = Math.floor((stats.todaysFocusTime || 0) / 60);
+  const dailyGoalMinutes = userData.goals?.dailyGoal || 25;
+  const dailyProgressPercentage = Math.round((dailyProgressMinutes / dailyGoalMinutes) * 100);
 
   return (
     <DashboardCard>
@@ -84,13 +88,13 @@ export default function QuickStats({ userData }: QuickStatsProps) {
               className="h-full bg-pink-500"
               initial={{ width: 0 }}
               animate={{ 
-                width: `${Math.min(((stats.todaysFocusTime || 0) / (userData.goals?.dailyGoal || 1)) * 100, 100)}%` 
+                width: `${Math.min(dailyProgressPercentage, 100)}%` 
               }}
               transition={{ duration: 0.5 }}
             />
           </div>
           <p className="text-sm text-pink-600 mt-2 font-[Halogen]">
-            {Math.round(((stats.todaysFocusTime || 0) / (userData.goals?.dailyGoal || 1)) * 100)}% of daily goal completed
+            {dailyProgressPercentage}% of daily goal completed
           </p>
         </motion.div>
       </div>
