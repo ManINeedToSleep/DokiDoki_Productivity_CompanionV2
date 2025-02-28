@@ -5,6 +5,7 @@ import { useUserData } from "@/hooks/useUserData";
 import { updateGoalProgress } from "@/lib/firebase/goals";
 import { updateDoc, doc, increment } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { checkAllAchievements, checkSessionAchievements, checkTimeBasedAchievements } from '@/lib/firebase/achievements';
 
 type TimerMode = 'work' | 'shortBreak' | 'longBreak';
 
@@ -43,11 +44,18 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
   const updateGoals = useCallback(async (secondsCompleted: number) => {
     if (!userData?.base?.uid) return;
     
-    // Update system stats in seconds
+    // Update system stats
     await updateDoc(doc(db, 'users', userData.base.uid), {
       'focusStats.todaysFocusTime': increment(secondsCompleted),
       'focusStats.totalFocusTime': increment(secondsCompleted),
       'focusStats.weeklyFocusTime': increment(secondsCompleted)
+    });
+
+    // Check achievements after updating stats
+    await checkAllAchievements(userData.base.uid, {
+      ...userData.focusStats,
+      totalFocusTime: (userData.focusStats.totalFocusTime || 0) + secondsCompleted,
+      completedGoals: userData.goals?.list.filter(goal => goal.completed).length || 0
     });
 
     // Only update goals if we have at least a minute
@@ -76,6 +84,8 @@ export function TimerProvider({ children }: { children: React.ReactNode }) {
       if (mode === 'work' && lastUpdateTime) {
         const secondsElapsed = Math.floor((Date.now() - lastUpdateTime) / 1000);
         await updateGoals(secondsElapsed);
+        await checkSessionAchievements(userData.base.uid, secondsElapsed);
+        await checkTimeBasedAchievements(userData.base.uid, new Date(lastUpdateTime), Math.floor(secondsElapsed / 60));
         setLastUpdateTime(null);
         setSessionsCompleted(prev => prev + 1);
         

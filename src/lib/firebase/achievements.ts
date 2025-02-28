@@ -158,7 +158,7 @@ export const checkCompanionAchievements = async (
   affinityLevel: number
 ): Promise<void> => {
   const achievementId = `${companionId}_friend` as keyof typeof ACHIEVEMENTS.companion;
-  if (affinityLevel >= ACHIEVEMENTS.companion[achievementId].requirement.value) {
+  if (affinityLevel >= 10) {
     await unlockAchievement(uid, achievementId);
   }
 };
@@ -180,13 +180,54 @@ export const checkTimeBasedAchievements = async (
 ): Promise<void> => {
   const hour = sessionStartTime.getHours();
   
-  // Night Owl (between 00:00 and 05:00)
+  // Night Owl (2 hours between 00:00 and 05:00)
   if (hour >= 0 && hour < 5 && sessionMinutes >= 120) {
     await unlockAchievement(uid, 'night_owl');
   }
   
-  // Early Bird (before 07:00)
+  // Early Bird (any session before 7 AM)
   if (hour < 7) {
     await unlockAchievement(uid, 'early_bird');
+  }
+};
+
+interface AchievementStats {
+  totalFocusTime: number;
+  weekStreak: number;
+  longestStreak: number;
+  completedGoals: number;
+}
+
+export const checkAllAchievements = async (uid: string, stats: AchievementStats) => {
+  // Focus time achievements
+  if (stats.totalFocusTime >= 60) { // 1 minute in seconds
+    await unlockAchievement(uid, 'first_session');
+  }
+  if (stats.totalFocusTime >= 36000) { // 10 hours in seconds (600 minutes * 60)
+    await unlockAchievement(uid, 'dedication');
+  }
+
+  // Goal achievements
+  if (stats.completedGoals >= 1) {
+    await unlockAchievement(uid, 'goal_setter');
+  }
+  if (stats.completedGoals >= 5) {
+    await unlockAchievement(uid, 'achiever');
+  }
+
+  // Time-based achievements (if needed)
+  const currentHour = new Date().getHours();
+  if (currentHour >= 0 && currentHour < 5) {
+    await unlockAchievement(uid, 'night_owl');
+  }
+  if (currentHour < 7) {
+    await unlockAchievement(uid, 'early_bird');
+  }
+};
+
+// Add a new check for uninterrupted sessions in TimerProvider
+export const checkSessionAchievements = async (uid: string, sessionSeconds: number) => {
+  if (sessionSeconds >= 3000) { // 50 minutes in seconds
+    await unlockAchievement(uid, 'master');
   }
 };

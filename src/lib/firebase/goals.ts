@@ -1,6 +1,7 @@
 import { db, Timestamp } from '@/lib/firebase';
 import { doc, updateDoc, arrayUnion, getDoc, increment } from 'firebase/firestore';
 import { UserDocument } from '@/lib/firebase/user';
+import { checkAllAchievements } from '@/lib/firebase/achievements';
 
 export interface Goal {
   id: string;
@@ -97,6 +98,15 @@ export const completeGoal = async (
 
   await updateDoc(userRef, {
     'goals.list': updatedGoals
+  });
+
+  // Check achievements after completing goal
+  await checkAllAchievements(uid, {
+    ...userData.focusStats,
+    completedGoals: (userData.goals?.list.filter(goal => goal.completed).length || 0) + 1,
+    totalFocusTime: userData.focusStats?.totalFocusTime || 0,
+    weekStreak: userData.focusStats?.weekStreak || 0,
+    longestStreak: userData.focusStats?.longestStreak || 0
   });
 };
 
