@@ -1,9 +1,8 @@
 "use client";
 
 import { motion } from 'framer-motion';
-import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { FaHome, FaClock, FaComments, FaCog, FaSignOutAlt } from 'react-icons/fa';
+import { FaHome, FaClock, FaComments, FaCog, FaSignOutAlt, FaTrophy, FaChartBar } from 'react-icons/fa';
 import { signOut } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 import { useTimer } from '@/components/Timer/TimerProvider';
@@ -11,26 +10,24 @@ import { useTimer } from '@/components/Timer/TimerProvider';
 const navItems = [
   { label: 'Home', icon: <FaHome size={20} />, path: '/dashboard' },
   { label: 'Timer', icon: <FaClock size={20} />, path: '/dashboard/timer' },
+  { label: 'Goals', icon: <FaTrophy size={20} />, path: '/dashboard/goals' },
+  { label: 'Stats', icon: <FaChartBar size={20} />, path: '/dashboard/statistics' },
   { label: 'Chat', icon: <FaComments size={20} />, path: '/dashboard/chat' },
   { label: 'Settings', icon: <FaCog size={20} />, path: '/dashboard/settings' },
+  { label: 'Achievements', icon: <FaTrophy size={20} />, path: '/dashboard/achievements' },
 ] as const;
+
+function TimerNav() {
+  const timer = useTimer();
+  return { isDisabled: timer.isRunning && timer.mode === 'work' };
+}
 
 export default function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
-  
-  // Only try to use timer context if we're on the timer page
   const isTimerPage = pathname === '/dashboard/timer';
-  let isDisabled = false;
   
-  try {
-    if (isTimerPage) {
-      const { mode, isRunning } = useTimer();
-      isDisabled = isRunning && mode === 'work';
-    }
-  } catch {
-    // Timer context not available, that's okay
-  }
+  const isDisabled = isTimerPage ? TimerNav().isDisabled : false;
 
   const handleSignOut = async () => {
     try {

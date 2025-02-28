@@ -1,7 +1,7 @@
 "use client";
 
 import { useUserData } from "@/hooks/useUserData";
-import Goals from "@/components/Dashboard/DashboardComponents/Goals";
+import Goals from "@/components/Dashboard/Goals";
 import Navbar from "@/components/Common/Navbar/Navbar";
 import PolkaDotBackground from "@/components/Common/BackgroundCustom/PolkadotBackground";
 import CompanionDisplay from "@/components/Common/CompanionDisplay/CompanionDisplay";

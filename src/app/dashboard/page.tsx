@@ -10,10 +10,10 @@ import PolkaDotBackground from "@/components/Common/BackgroundCustom/PolkadotBac
 import { User } from "firebase/auth";
 import type { UserDocument } from "@/lib/firebase/user";
 import CompanionDisplay from "@/components/Common/CompanionDisplay/CompanionDisplay";
-import QuickStats from "@/components/Dashboard/DashboardComponents/QuickStats";
-import Goals from "@/components/Dashboard/DashboardComponents/Goals";
-import CharacterProgression from "@/components/Dashboard/DashboardComponents/CharacterProgression";
-import Achievements from "@/components/Dashboard/DashboardComponents/Achievements";
+import QuickStats from "@/components/Dashboard/QuickStats";
+import Goals from "@/components/Dashboard/Goals";
+import CharacterProgression from "@/components/Dashboard/CharacterProgression";
+import Achievements from "@/components/Dashboard/Achievements";
 
 export default function DashboardPage() {
   const router = useRouter();
