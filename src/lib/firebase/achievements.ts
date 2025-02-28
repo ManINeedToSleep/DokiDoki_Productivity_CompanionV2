@@ -1,5 +1,5 @@
 import { db, Timestamp } from '@/lib/firebase';
-import { doc, updateDoc, arrayUnion } from 'firebase/firestore';
+import { doc, updateDoc, arrayUnion, getDoc } from 'firebase/firestore';
 import type { Goal } from './goals';
 
 export interface Achievement {
@@ -128,6 +128,19 @@ export const unlockAchievement = async (
   achievementId: string
 ): Promise<void> => {
   const userRef = doc(db, 'users', uid);
+  const userDoc = await getDoc(userRef);
+  
+  if (!userDoc.exists()) return;
+  
+  // Check if achievement already exists
+  const userData = userDoc.data() as UserDocument;
+  const existingAchievements = userData.achievements || [];
+  
+  // Don't add if already unlocked
+  if (existingAchievements.some(a => a.id === achievementId)) {
+    return;
+  }
+
   const achievement = {
     id: achievementId,
     unlockedAt: Timestamp.now()
@@ -180,13 +193,13 @@ export const checkTimeBasedAchievements = async (
 ): Promise<void> => {
   const hour = sessionStartTime.getHours();
   
-  // Night Owl (2 hours between 00:00 and 05:00)
+  // Night Owl (must complete full 2 hours between midnight and 5 AM)
   if (hour >= 0 && hour < 5 && sessionMinutes >= 120) {
     await unlockAchievement(uid, 'night_owl');
   }
   
-  // Early Bird (any session before 7 AM)
-  if (hour < 7) {
+  // Early Bird (must complete at least 15 minutes before 7 AM)
+  if (hour < 7 && sessionMinutes >= 15) {
     await unlockAchievement(uid, 'early_bird');
   }
 };

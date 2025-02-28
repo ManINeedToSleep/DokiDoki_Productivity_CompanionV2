@@ -12,6 +12,8 @@ import WeeklyGoals from "@/components/Goals/GoalTypes/WeeklyGoals";
 import CompanionGoals from "@/components/Goals/GoalTypes/CompanionGoals";
 import CustomGoals from "@/components/Goals/GoalTypes/CustomGoals";
 import AddGoalModal from "@/components/Goals/GoalEdits/AddGoalModal";
+import { doc, updateDoc } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 
 interface GoalsProps {
   userData: UserDocument | null;
@@ -38,13 +40,20 @@ export default function Goals({ userData, variant = 'dashboard', allowEditing = 
     if (!userData?.base?.uid) return;
 
     try {
+      // Initialize goals.list if it doesn't exist
+      if (!userData.goals?.list) {
+        await updateDoc(doc(db, 'users', userData.base.uid), {
+          'goals.list': []
+        });
+      }
+
       await createGoal(userData.base.uid, {
         ...goal,
-        type: 'challenge',
         deadline: Timestamp.fromDate(
           new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
         )
       });
+      
       setIsModalOpen(false);
       await refreshUserData();
     } catch (error) {
@@ -91,7 +100,7 @@ export default function Goals({ userData, variant = 'dashboard', allowEditing = 
       id: 'daily_focus',
       title: "Daily Focus Goal",
       description: "Complete your daily focus time target",
-      currentMinutes: Math.floor((userData.focusStats?.todaysFocusTime || 0) / 60), // Convert seconds to minutes
+      currentMinutes: Math.floor((userData.focusStats?.todaysFocusTime || 0) / 60),
       targetMinutes: userData.goals?.dailyGoal || 25,
       type: 'daily' as const,
       deadline: Timestamp.fromDate(new Date(Date.now() + 24 * 60 * 60 * 1000)),
@@ -104,8 +113,8 @@ export default function Goals({ userData, variant = 'dashboard', allowEditing = 
       id: 'weekly_focus',
       title: "Weekly Focus Goal",
       description: "Complete 5 hours of focused work this week",
-      currentMinutes: Math.floor((userData.focusStats?.weeklyFocusTime || 0) / 60), // Convert seconds to minutes
-      targetMinutes: 300, // 5 hours
+      currentMinutes: Math.floor((userData.focusStats?.weeklyFocusTime || 0) / 60),
+      targetMinutes: 300,
       type: 'weekly' as const,
       deadline: Timestamp.fromDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)),
       createdAt: Timestamp.now(),
@@ -113,23 +122,23 @@ export default function Goals({ userData, variant = 'dashboard', allowEditing = 
       isSystemGoal: true,
     },
     // Companion Goals
-    ...systemGoals.map((goal) => ({
+    ...(systemGoals?.map((goal) => ({
       id: `companion_${goal.title}`,
       title: goal.title,
       description: goal.description,
-      currentMinutes: Math.floor((userData.focusStats?.todaysFocusTime || 0) / 60), // Convert seconds to minutes
+      currentMinutes: Math.floor((userData.focusStats?.todaysFocusTime || 0) / 60),
       targetMinutes: goal.targetMinutes,
       type: goal.type,
       deadline: Timestamp.fromDate(new Date(Date.now() + (goal.type === 'weekly' ? 7 : 1) * 24 * 60 * 60 * 1000)),
       createdAt: Timestamp.now(),
       completed: false,
       isSystemGoal: true,
-    })),
-    // User's custom goals remain unchanged as they're already in minutes
-    ...(userData.goals?.list || []).map(goal => ({
+    })) || []),
+    // User's custom goals
+    ...((Array.isArray(userData.goals?.list) ? userData.goals.list : []).map(goal => ({
       ...goal,
       isSystemGoal: false,
-    }))
+    })))
   ];
 
   // Separate goals by type - update these filters

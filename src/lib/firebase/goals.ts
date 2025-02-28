@@ -24,6 +24,13 @@ export const createGoal = async (
   goal: Omit<Goal, 'id' | 'createdAt' | 'currentMinutes' | 'completed'>
 ): Promise<void> => {
   const userRef = doc(db, 'users', uid);
+  const userDoc = await getDoc(userRef);
+
+  if (!userDoc.exists()) return;
+
+  const userData = userDoc.data() as UserDocument;
+  const currentGoals = userData.goals?.list || [];
+
   const newGoal: Goal = {
     ...goal,
     id: `goal_${Date.now()}`,
@@ -32,8 +39,20 @@ export const createGoal = async (
     completed: false,
   };
 
+  // Initialize goals object if it doesn't exist
+  if (!userData.goals) {
+    await updateDoc(userRef, {
+      goals: {
+        list: [newGoal],
+        dailyGoal: 25,
+        lastUpdated: Timestamp.now()
+      }
+    });
+    return;
+  }
+
   await updateDoc(userRef, {
-    'goals.list': arrayUnion(newGoal)
+    'goals.list': [...currentGoals, newGoal]
   });
 };
 
@@ -164,6 +183,9 @@ export const refreshGoals = async (uid: string): Promise<void> => {
   const now = Timestamp.now();
   const goalsList = userData.goals?.list || [];
   
+  // Ensure goalsList is an array before mapping
+  if (!Array.isArray(goalsList)) return;
+
   // Filter out expired goals and reset daily/weekly goals
   const updatedGoals = goalsList.map(goal => {
     // Skip if goal is completed or it's a challenge
@@ -172,14 +194,12 @@ export const refreshGoals = async (uid: string): Promise<void> => {
     // Check if goal has expired
     if (goal.deadline.toDate() < now.toDate()) {
       if (goal.type === 'daily') {
-        // Reset daily goal for next day
         return {
           ...goal,
           currentMinutes: 0,
           deadline: Timestamp.fromDate(new Date(Date.now() + 24 * 60 * 60 * 1000))
         };
       } else if (goal.type === 'weekly') {
-        // Reset weekly goal for next week
         return {
           ...goal,
           currentMinutes: 0,
