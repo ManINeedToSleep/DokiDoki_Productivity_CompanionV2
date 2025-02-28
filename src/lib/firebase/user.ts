@@ -33,6 +33,7 @@ export interface UserDocument {
   focusStats: {
     totalFocusTime: number;
     todaysFocusTime: number;
+    weeklyFocusTime: number;
     weekStreak: number;
     longestStreak: number;
     averageFocusPerDay: number;
@@ -42,6 +43,7 @@ export interface UserDocument {
     dailyGoal: number;
     companionAssignedGoal: string;
     list: Goal[];
+    lastUpdated: Timestamp;
   };
   achievements: {
     id: string;
@@ -96,6 +98,7 @@ export const createUserDocument = async (
       focusStats: {
         totalFocusTime: 0,
         todaysFocusTime: 0,
+        weeklyFocusTime: 0,
         weekStreak: 0,
         longestStreak: 0,
         averageFocusPerDay: 0,
@@ -105,6 +108,7 @@ export const createUserDocument = async (
         dailyGoal: 25, // Default 25 minutes
         companionAssignedGoal: "Complete your first focus session!",
         list: [],
+        lastUpdated: now,
       },
       achievements: [],
       version: 1,

@@ -1,5 +1,6 @@
 import { db, Timestamp } from '@/lib/firebase';
-import { doc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { doc, updateDoc, arrayUnion, getDoc, increment } from 'firebase/firestore';
+import { UserDocument } from '@/lib/firebase/user';
 
 export interface Goal {
   id: string;
@@ -41,10 +42,22 @@ export const updateGoalProgress = async (
   minutes: number
 ): Promise<void> => {
   const userRef = doc(db, 'users', uid);
-  // Note: This is a simplified version. In reality, you'd need to
-  // find the goal in the array and update its specific minutes
+  const userDoc = await getDoc(userRef);
+  
+  if (!userDoc.exists()) return;
+
+  const userData = userDoc.data() as UserDocument;
+  const goalsList = userData.goals?.list || [];
+  
+  // Update only the specific goal's progress
+  const updatedGoals = goalsList.map(goal => 
+    goal.id === goalId 
+      ? { ...goal, currentMinutes: minutes }
+      : goal
+  );
+
   await updateDoc(userRef, {
-    [`goals.list.${goalId}.currentMinutes`]: minutes
+    'goals.list': updatedGoals
   });
 };
 
@@ -53,18 +66,122 @@ export const completeGoal = async (
   goalId: string
 ): Promise<void> => {
   const userRef = doc(db, 'users', uid);
+  const userDoc = await getDoc(userRef);
+  
+  if (!userDoc.exists()) return;
+
+  const userData = userDoc.data() as UserDocument;
+  const goal = userData.goals?.list.find(g => g.id === goalId);
+
+  if (goal?.reward) {
+    // Handle rewards
+    if (goal.reward.type === 'affinity') {
+      await updateDoc(userRef, {
+        'companion.affinity': increment(goal.reward.value as number)
+      });
+    } else if (goal.reward.type === 'achievement') {
+      await updateDoc(userRef, {
+        'achievements': arrayUnion(goal.reward.value)
+      });
+    } else if (goal.reward.type === 'background') {
+      await updateDoc(userRef, {
+        'backgrounds': arrayUnion(goal.reward.value)
+      });
+    }
+  }
+
+  // Mark goal as completed
+  const updatedGoals = userData.goals?.list.map(g => 
+    g.id === goalId ? { ...g, completed: true } : g
+  );
+
   await updateDoc(userRef, {
-    [`goals.list.${goalId}.completed`]: true
+    'goals.list': updatedGoals
   });
 };
 
-export const removeGoal = async (
+export const removeGoal = async (uid: string, goalId: string): Promise<void> => {
+  const userRef = doc(db, 'users', uid);
+  const userDoc = await getDoc(userRef);
+  
+  if (!userDoc.exists()) return;
+
+  const userData = userDoc.data() as UserDocument;
+  const updatedGoals = (userData.goals?.list || []).filter(goal => goal.id !== goalId);
+
+  await updateDoc(userRef, {
+    'goals.list': updatedGoals
+  });
+};
+
+export const updateGoal = async (
   uid: string,
-  goal: Goal
+  goalId: string,
+  updates: {
+    title?: string;
+    description?: string;
+    targetMinutes?: number;
+  }
 ): Promise<void> => {
   const userRef = doc(db, 'users', uid);
+  const userDoc = await getDoc(userRef);
+  
+  if (!userDoc.exists()) return;
+
+  const userData = userDoc.data() as UserDocument;
+  const goalsList = userData.goals?.list || [];
+  
+  // Find and update the goal
+  const updatedGoals = goalsList.map(goal => 
+    goal.id === goalId 
+      ? { ...goal, ...updates }
+      : goal
+  );
+
   await updateDoc(userRef, {
-    'goals.list': arrayRemove(goal)
+    'goals.list': updatedGoals
+  });
+};
+
+// Add goal refresh function
+export const refreshGoals = async (uid: string): Promise<void> => {
+  const userRef = doc(db, 'users', uid);
+  const userDoc = await getDoc(userRef);
+  
+  if (!userDoc.exists()) return;
+
+  const userData = userDoc.data() as UserDocument;
+  const now = Timestamp.now();
+  const goalsList = userData.goals?.list || [];
+  
+  // Filter out expired goals and reset daily/weekly goals
+  const updatedGoals = goalsList.map(goal => {
+    // Skip if goal is completed or it's a challenge
+    if (goal.completed || goal.type === 'challenge') return goal;
+
+    // Check if goal has expired
+    if (goal.deadline.toDate() < now.toDate()) {
+      if (goal.type === 'daily') {
+        // Reset daily goal for next day
+        return {
+          ...goal,
+          currentMinutes: 0,
+          deadline: Timestamp.fromDate(new Date(Date.now() + 24 * 60 * 60 * 1000))
+        };
+      } else if (goal.type === 'weekly') {
+        // Reset weekly goal for next week
+        return {
+          ...goal,
+          currentMinutes: 0,
+          deadline: Timestamp.fromDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000))
+        };
+      }
+    }
+    return goal;
+  });
+
+  await updateDoc(userRef, {
+    'goals.list': updatedGoals
   });
 };
 

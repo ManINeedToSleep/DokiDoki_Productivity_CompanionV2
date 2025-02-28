@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { auth } from "@/lib/firebase";
 import { getUserDocument } from "@/lib/firebase/user";
-import Navbar from "@/components/Dashboard/Navbar";
+import Navbar from "@/components/Common/Navbar/Navbar";
 import PolkaDotBackground from "@/components/Common/BackgroundCustom/PolkadotBackground";
 import { User } from "firebase/auth";
 import type { UserDocument } from "@/lib/firebase/user";
