@@ -155,9 +155,3 @@ src/
     ├── firebase
     └── helpers
 ```
-
-Would you like me to:
-1. Start with any specific section?
-2. Add more detail to any part?
-3. Create the initial file structure?
-4. Begin with Firebase setup? 
