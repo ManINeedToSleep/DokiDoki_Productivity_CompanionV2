@@ -7,6 +7,7 @@ const LoadGame = dynamic(() => import('./LoadGame'));
 const Options = dynamic(() => import('./Options'));
 const Help = dynamic(() => import('./Help'));
 const Extra = dynamic(() => import('./Extra'));
+const About = dynamic(() => import('./About'));
 
 interface MenuContentProps {
   selectedItem: string;
@@ -26,6 +27,8 @@ export default function MenuContent({ selectedItem, onCharacterSelect }: MenuCon
         return <Help />;
       case 'extra':
         return <Extra />;
+      case 'about':
+        return <About />;
       default:
         return null;
     }

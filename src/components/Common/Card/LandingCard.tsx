@@ -12,7 +12,7 @@ export default function Card({ children }: CardProps) {
     <div className="fixed inset-0 left-1/3 flex items-center justify-center z-10">
       <AnimatePresence mode="wait">
         <motion.div 
-          className="w-[550px] max-h-[600px] overflow-y-auto 
+          className="w-[550px] max-h-[600px] overflow-y-auto scrollbar-hide
             bg-white/80 backdrop-blur-sm rounded-lg p-8 shadow-lg"
           initial={{ opacity: 0, x: 50, scale: 0.95 }}
           animate={{ opacity: 1, x: 0, scale: 1 }}

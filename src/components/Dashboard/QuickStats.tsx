@@ -1,103 +1,127 @@
 "use client";
 
-import { motion } from "framer-motion";
-import DashboardCard from "@/components/Common/Card/DashboardCard";
-import { formatTime } from "@/lib/utils/timeFormat";
-import type { UserDocument } from "@/lib/firebase/user";
-
-interface StatItemProps {
-  label: string;
-  value: string | number;
-  icon: string;
-  index: number;
-}
-
-const StatItem = ({ label, value, icon, index }: StatItemProps) => (
-  <motion.div
-    initial={{ opacity: 0, y: 20 }}
-    animate={{ opacity: 1, y: 0 }}
-    transition={{ delay: index * 0.1 }}
-    className="bg-white/50 p-3 rounded-lg flex items-center gap-3"
-  >
-    <span className="text-xl text-pink-500">{icon}</span>
-    <div className="flex-1">
-      <p className="text-pink-700 text-sm">{label}</p>
-      <p className="text-pink-900 font-[Halogen]">{value}</p>
-    </div>
-  </motion.div>
-);
+import { motion } from 'framer-motion';
+import { FaClock, FaFire, FaCheckCircle } from 'react-icons/fa';
+import { UserDocument } from '@/lib/firebase/user';
+import { CompanionId } from '@/lib/firebase/companion';
 
 interface QuickStatsProps {
   userData: UserDocument | null;
 }
 
 export default function QuickStats({ userData }: QuickStatsProps) {
-  if (!userData?.focusStats) return null;
-
-  const stats = userData.focusStats;
-  const todaysTotalSeconds = stats.todaysFocusTime || 0;
+  if (!userData) return null;
   
-  const statItems: StatItemProps[] = [
+  const { focusStats } = userData;
+  const selectedCompanion = userData.settings.selectedCompanion || 'sayori';
+  
+  // Format time (convert seconds to hours and minutes)
+  const formatTime = (seconds: number) => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    
+    if (hours > 0) {
+      return `${hours}h ${minutes}m`;
+    }
+    return `${minutes}m`;
+  };
+  
+  // Get character-specific colors
+  const getCharacterColors = (id: CompanionId) => {
+    switch (id) {
+      case 'sayori':
+        return { 
+          primary: '#FF9ED2',
+          secondary: '#FFEEF3',
+          text: '#D76C95',
+          heading: '#FF9ED2'
+        };
+      case 'natsuki':
+        return { 
+          primary: '#FF8DA1',
+          secondary: '#FFF0F0',
+          text: '#D14D61',
+          heading: '#FF8DA1'
+        };
+      case 'yuri':
+        return { 
+          primary: '#A49EFF',
+          secondary: '#F0F0FF',
+          text: '#6A61E0',
+          heading: '#A49EFF'
+        };
+      case 'monika':
+        return { 
+          primary: '#85CD9E',
+          secondary: '#F0FFF5',
+          text: '#4A9B68',
+          heading: '#85CD9E'
+        };
+      default:
+        return { 
+          primary: '#FF9ED2',
+          secondary: '#FFEEF3',
+          text: '#D76C95',
+          heading: '#FF9ED2'
+        };
+    }
+  };
+  
+  const colors = getCharacterColors(selectedCompanion);
+  
+  const stats = [
     {
-      label: "Today's Focus Time",
-      value: formatTime(todaysTotalSeconds),
-      icon: "⏱️",
-      index: 0
+      label: "Today's Focus",
+      value: formatTime(focusStats.todaysFocusTime),
+      icon: <FaClock className="text-pink-500" size={20} />,
+      color: selectedCompanion === 'sayori' ? 'bg-pink-100' :
+             selectedCompanion === 'natsuki' ? 'bg-red-100' :
+             selectedCompanion === 'yuri' ? 'bg-indigo-100' :
+             'bg-green-100'
     },
     {
-      label: "Total Focus Time",
-      value: formatTime(stats.totalFocusTime || 0),
-      icon: "⭐",
-      index: 1
+      label: "Weekly Streak",
+      value: `${focusStats.weekStreak} days`,
+      icon: <FaFire className="text-orange-500" size={20} />,
+      color: 'bg-orange-100'
     },
     {
-      label: "Current Streak",
-      value: `${stats.weekStreak || 0} weeks`,
-      icon: "🔥",
-      index: 2
-    },
-    {
-      label: "Longest Streak",
-      value: `${stats.longestStreak || 0} days`,
-      icon: "🏆",
-      index: 3
+      label: "Completed Sessions",
+      value: focusStats.completedSessions,
+      icon: <FaCheckCircle className="text-green-500" size={20} />,
+      color: 'bg-green-100'
     }
   ];
-
-  const dailyProgressMinutes = Math.floor((stats.todaysFocusTime || 0) / 60);
-  const dailyGoalMinutes = userData.goals?.dailyGoal || 25;
-  const dailyProgressPercentage = Math.round((dailyProgressMinutes / dailyGoalMinutes) * 100);
-
+  
   return (
-    <DashboardCard>
-      <h2 className="text-2xl font-[Riffic] text-pink-700 mb-4">Quick Stats</h2>
-      <div className="space-y-3">
-        {statItems.map((item) => (
-          <StatItem key={item.label} {...item} />
+    <motion.div 
+      className="bg-white rounded-xl shadow-md p-4"
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.1 }}
+    >
+      <h2 
+        className="text-lg font-[Riffic] mb-3"
+        style={{ color: colors.heading }}
+      >
+        Quick Stats
+      </h2>
+      
+      <div className="grid grid-cols-3 gap-2">
+        {stats.map((stat, index) => (
+          <motion.div 
+            key={stat.label}
+            className={`${stat.color} rounded-lg p-3 flex flex-col items-center justify-center text-center`}
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 0.1 + (index * 0.1) }}
+          >
+            <div className="mb-1">{stat.icon}</div>
+            <div className="text-lg font-bold text-gray-800 font-[Halogen]">{stat.value}</div>
+            <div className="text-xs text-gray-700 font-[Halogen]">{stat.label}</div>
+          </motion.div>
         ))}
-        
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.5 }}
-          className="mt-4"
-        >
-          <h3 className="text-lg font-[Riffic] text-pink-700 mb-2">Daily Goal Progress</h3>
-          <div className="w-full h-2 bg-pink-100 rounded-full overflow-hidden">
-            <motion.div
-              className="h-full bg-pink-500"
-              initial={{ width: 0 }}
-              animate={{ 
-                width: `${Math.min(dailyProgressPercentage, 100)}%` 
-              }}
-              transition={{ duration: 0.5 }}
-            />
-          </div>
-          <p className="text-sm text-pink-600 mt-2 font-[Halogen]">
-            {dailyProgressPercentage}% of daily goal completed
-          </p>
-        </motion.div>
       </div>
-    </DashboardCard>
+    </motion.div>
   );
-}
+} 

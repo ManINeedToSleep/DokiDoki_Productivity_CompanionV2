@@ -12,6 +12,7 @@ const MENU_ITEMS = [
   { id: 'load-game', label: 'Load Game' },
   { id: 'options', label: 'Options' },
   { id: 'help', label: 'Help' },
+  { id: 'about', label: 'About' },
   { id: 'extra', label: 'Extra' },
 ];
 

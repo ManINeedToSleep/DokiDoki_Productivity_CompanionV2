@@ -1,85 +1,80 @@
 "use client";
 
-import { motion } from 'framer-motion';
 import { usePathname, useRouter } from 'next/navigation';
-import { FaHome, FaClock, FaComments, FaCog, FaSignOutAlt, FaTrophy, FaChartBar } from 'react-icons/fa';
 import { signOut } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
-import { useTimer } from '@/components/Timer/TimerProvider';
+import Button from '@/components/Common/Button/Button';
+import { useEffect, useState } from 'react';
+import { getUserDocument } from '@/lib/firebase/user';
+import { CompanionId } from '@/lib/firebase/companion';
 
 const navItems = [
-  { label: 'Home', icon: <FaHome size={20} />, path: '/dashboard' },
-  { label: 'Timer', icon: <FaClock size={20} />, path: '/dashboard/timer' },
-  { label: 'Goals', icon: <FaTrophy size={20} />, path: '/dashboard/goals' },
-  { label: 'Stats', icon: <FaChartBar size={20} />, path: '/dashboard/statistics' },
-  { label: 'Chat', icon: <FaComments size={20} />, path: '/dashboard/chat' },
-  { label: 'Settings', icon: <FaCog size={20} />, path: '/dashboard/settings' },
-  { label: 'Achievements', icon: <FaTrophy size={20} />, path: '/dashboard/achievements' },
-] as const;
-
-function TimerNav() {
-  const timer = useTimer();
-  return { isDisabled: timer.isRunning && timer.mode === 'work' };
-}
+  { label: 'Home', path: '/dashboard' },
+  { label: 'Timer', path: '/dashboard/timer' },
+  { label: 'Goals', path: '/dashboard/goals' },
+  { label: 'Stats', path: '/dashboard/statistics' },
+  { label: 'Achievements', path: '/dashboard/achievements' }
+];
 
 export default function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
-  const isTimerPage = pathname === '/dashboard/timer';
+  const [selectedCompanion, setSelectedCompanion] = useState<CompanionId>('sayori');
   
-  const isDisabled = isTimerPage ? TimerNav().isDisabled : false;
-
+  useEffect(() => {
+    const fetchUserData = async () => {
+      try {
+        const user = auth.currentUser;
+        if (user) {
+          const userData = await getUserDocument(user.uid);
+          if (userData?.settings?.selectedCompanion) {
+            setSelectedCompanion(userData.settings.selectedCompanion);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching user data:', error);
+      }
+    };
+    
+    fetchUserData();
+  }, []);
+  
   const handleSignOut = async () => {
     try {
       await signOut(auth);
-      router.push('/');
+      router.push('/login');
     } catch (error) {
       console.error('Error signing out:', error);
     }
   };
-
+  
   return (
-    <nav className="fixed top-0 left-0 right-0 h-16 bg-[#FFEEF3] border-b-4 border-[#FFB6C1] shadow-lg z-50">
-      <div className="max-w-7xl mx-auto h-full flex items-center justify-between px-4">
-        <div className="flex items-center space-x-4">
-          {navItems.map((item) => (
-            <motion.div
-              key={item.path}
-              className={`
-                px-4 py-2 rounded-md cursor-pointer 
-                flex items-center gap-2 border-4
-                ${pathname === item.path 
-                  ? 'border-[#FFB6C1] bg-[#FFB6C1] text-pink-900' 
-                  : 'border-[#FFB6C1] bg-[#FFEEF3] text-pink-700 hover:bg-[#FFCCDD]'} 
-                transition-colors
-                ${isDisabled ? 'opacity-50 cursor-not-allowed' : ''}
-              `}
-              whileHover={!isDisabled ? { scale: 1.05 } : {}}
-              onClick={(e) => {
-                if (isDisabled) {
-                  e.preventDefault();
-                  return;
-                }
-                router.push(item.path);
-              }}
-            >
-              {item.icon}
-              <span className="font-[Riffic] text-sm">{item.label}</span>
-            </motion.div>
-          ))}
+    <nav className="bg-white shadow-md py-2">
+      <div className="container mx-auto px-4">
+        <div className="flex justify-between items-center">
+          {/* Navigation buttons on the left */}
+          <div className="flex space-x-2">
+            {navItems.map((item) => (
+              <Button
+                key={item.path}
+                label={item.label}
+                onClick={() => router.push(item.path)}
+                companionId={selectedCompanion}
+                className={`px-3 py-1 text-sm ${
+                  pathname === item.path ? 'font-semibold' : 'font-normal'
+                }`}
+              />
+            ))}
+          </div>
+          
+          {/* Sign out button on the right */}
+          <Button
+            label="Sign Out"
+            onClick={handleSignOut}
+            companionId={selectedCompanion}
+            className="px-3 py-1 text-sm"
+          />
         </div>
-
-        <motion.button
-          onClick={handleSignOut}
-          className={`px-4 py-2 rounded-md flex items-center gap-2 border-4
-            border-[#FFB6C1] bg-[#FFEEF3] text-pink-700 hover:bg-[#FFCCDD]
-            ${isDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
-          whileHover={!isDisabled ? { scale: 1.05 } : {}}
-          disabled={isDisabled}
-        >
-          <FaSignOutAlt size={20} />
-          <span className="font-[Riffic] text-sm">Sign Out</span>
-        </motion.button>
       </div>
     </nav>
   );

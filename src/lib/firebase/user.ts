@@ -1,6 +1,38 @@
 import { db, Timestamp } from '@/lib/firebase';
-import { doc, setDoc, getDoc, updateDoc, increment } from 'firebase/firestore';
+import { doc, setDoc, getDoc, updateDoc, increment, FieldValue } from 'firebase/firestore';
 import type { Goal } from './goals';
+import { CompanionId, CompanionMood } from './companion';
+
+export interface FocusSession {
+  id: string;
+  startTime: Timestamp;
+  endTime: Timestamp;
+  duration: number; // in seconds
+  completed: boolean;
+  companionId: CompanionId;
+  breaks: {
+    count: number;
+    totalDuration: number; // in seconds
+  };
+  tags?: string[];
+}
+
+export interface UserStats {
+  totalFocusTime: number; // in seconds
+  todaysFocusTime: number; // in seconds
+  weeklyFocusTime: number; // in seconds
+  totalSessions: number;
+  completedSessions: number;
+  weekStreak: number;
+  longestStreak: number;
+  averageFocusPerDay: number; // in seconds
+  taskCompletionRate: number; // percentage
+  bestTimeOfDay?: 'morning' | 'afternoon' | 'evening' | 'night';
+  lastSessionDate: Timestamp;
+  dailyStreak: number;
+  totalBreaks: number;
+  averageSessionDuration: number; // in seconds
+}
 
 export interface UserDocument {
   base: {
@@ -9,41 +41,50 @@ export interface UserDocument {
     displayName: string;
     createdAt: Timestamp;
     lastLogin: Timestamp;
+    lastActive: Timestamp;
   };
   settings: {
-    selectedCompanion: 'sayori' | 'yuri' | 'natsuki' | 'monika' | null;
+    selectedCompanion: CompanionId | null;
     timerSettings: {
       workDuration: number;
       shortBreakDuration: number;
       longBreakDuration: number;
+      longBreakInterval: number;
+      autoStartBreaks: boolean;
+      autoStartPomodoros: boolean;
+      notifications: boolean;
+    };
+    theme: {
+      darkMode: boolean;
+      accentColor: string;
+      backgroundId: string;
     };
   };
   companions: {
     [companionId: string]: {
       affinityLevel: number;
       lastInteraction: Timestamp;
-      mood: 'happy' | 'neutral' | 'annoyed' | 'sad';
+      mood: CompanionMood;
       stats: {
-        totalInteractionTime: number;
+        totalInteractionTime: number; // in seconds
         consecutiveDays: number;
         lastDailyInteraction: Timestamp;
+        sessionsCompleted: number;
+        goalsCompleted: number;
+        giftsReceived: string[];
       };
     };
   };
-  focusStats: {
-    totalFocusTime: number;
-    todaysFocusTime: number;
-    weeklyFocusTime: number;
-    weekStreak: number;
-    longestStreak: number;
-    averageFocusPerDay: number;
-    taskCompletionRate: number;
-  };
+  focusStats: UserStats;
+  recentSessions: FocusSession[];
   goals: {
-    dailyGoal: number;
+    dailyGoal: number; // in minutes
+    weeklyGoal: number; // in minutes
     companionAssignedGoal: string;
     list: Goal[];
     lastUpdated: Timestamp;
+    completedGoals: number;
+    challengeGoalsCompleted: number;
   };
   achievements: {
     id: string;
@@ -55,7 +96,7 @@ export interface UserDocument {
 export const createUserDocument = async (
   uid: string, 
   email: string,
-  selectedCompanion: 'sayori' | 'yuri' | 'natsuki' | 'monika' = 'sayori' // Default to sayori if not provided
+  selectedCompanion: CompanionId = 'sayori' // Default to sayori if not provided
 ): Promise<void> => {
   const userRef = doc(db, 'users', uid);
   const userSnap = await getDoc(userRef);
@@ -65,11 +106,14 @@ export const createUserDocument = async (
     const defaultCompanionStats = {
       affinityLevel: 0,
       lastInteraction: now,
-      mood: 'neutral' as const,
+      mood: 'neutral' as CompanionMood,
       stats: {
         totalInteractionTime: 0,
         consecutiveDays: 0,
         lastDailyInteraction: now,
+        sessionsCompleted: 0,
+        goalsCompleted: 0,
+        giftsReceived: [],
       },
     };
 
@@ -80,6 +124,7 @@ export const createUserDocument = async (
         displayName: email.split('@')[0],
         createdAt: now,
         lastLogin: now,
+        lastActive: now,
       },
       settings: {
         selectedCompanion, // Use the selected companion
@@ -87,6 +132,15 @@ export const createUserDocument = async (
           workDuration: 25,
           shortBreakDuration: 5,
           longBreakDuration: 15,
+          longBreakInterval: 4,
+          autoStartBreaks: false,
+          autoStartPomodoros: false,
+          notifications: true,
+        },
+        theme: {
+          darkMode: true,
+          accentColor: '#FF80AB', // Default pink accent
+          backgroundId: 'default',
         },
       },
       companions: {
@@ -99,16 +153,26 @@ export const createUserDocument = async (
         totalFocusTime: 0,
         todaysFocusTime: 0,
         weeklyFocusTime: 0,
+        totalSessions: 0,
+        completedSessions: 0,
         weekStreak: 0,
         longestStreak: 0,
         averageFocusPerDay: 0,
         taskCompletionRate: 0,
+        lastSessionDate: now,
+        dailyStreak: 0,
+        totalBreaks: 0,
+        averageSessionDuration: 0,
       },
+      recentSessions: [],
       goals: {
         dailyGoal: 25, // Default 25 minutes
+        weeklyGoal: 150, // Default 2.5 hours per week
         companionAssignedGoal: "Complete your first focus session!",
         list: [],
         lastUpdated: now,
+        completedGoals: 0,
+        challengeGoalsCompleted: 0,
       },
       achievements: [],
       version: 1,
@@ -124,12 +188,15 @@ export const getUserDocument = async (uid: string): Promise<UserDocument | null>
 
   if (userSnap.exists()) {
     const userData = userSnap.data() as UserDocument;
-    return {
+    
+    // Handle potential missing fields in older user documents
+    const updatedUserData = {
       ...userData,
       base: {
         ...userData.base,
         createdAt: userData.base.createdAt,
         lastLogin: userData.base.lastLogin,
+        lastActive: userData.base.lastActive || userData.base.lastLogin,
       },
       companions: Object.keys(userData.companions).reduce((acc, companionId) => {
         acc[companionId] = {
@@ -138,29 +205,70 @@ export const getUserDocument = async (uid: string): Promise<UserDocument | null>
           stats: {
             ...userData.companions[companionId].stats,
             lastDailyInteraction: userData.companions[companionId].stats.lastDailyInteraction,
+            sessionsCompleted: userData.companions[companionId].stats.sessionsCompleted || 0,
+            goalsCompleted: userData.companions[companionId].stats.goalsCompleted || 0,
+            giftsReceived: userData.companions[companionId].stats.giftsReceived || [],
           },
         };
         return acc;
       }, {} as UserDocument["companions"]),
-      settings: userData.settings,
-      focusStats: userData.focusStats,
-      goals: userData.goals,
-      achievements: userData.achievements,
-      version: userData.version
+      settings: {
+        ...userData.settings,
+        timerSettings: {
+          ...userData.settings.timerSettings,
+          longBreakInterval: userData.settings.timerSettings.longBreakInterval || 4,
+          autoStartBreaks: userData.settings.timerSettings.autoStartBreaks || false,
+          autoStartPomodoros: userData.settings.timerSettings.autoStartPomodoros || false,
+          notifications: userData.settings.timerSettings.notifications !== false, // Default to true
+        },
+        theme: userData.settings.theme || {
+          darkMode: true,
+          accentColor: '#FF80AB',
+          backgroundId: 'default',
+        },
+      },
+      focusStats: {
+        ...userData.focusStats,
+        totalSessions: userData.focusStats.totalSessions || 0,
+        completedSessions: userData.focusStats.completedSessions || 0,
+        lastSessionDate: userData.focusStats.lastSessionDate || userData.base.lastLogin,
+        dailyStreak: userData.focusStats.dailyStreak || 0,
+        totalBreaks: userData.focusStats.totalBreaks || 0,
+        averageSessionDuration: userData.focusStats.averageSessionDuration || 0,
+      },
+      recentSessions: userData.recentSessions || [],
+      goals: {
+        ...userData.goals,
+        weeklyGoal: userData.goals.weeklyGoal || 150,
+        completedGoals: userData.goals.completedGoals || 0,
+        challengeGoalsCompleted: userData.goals.challengeGoalsCompleted || 0,
+      },
+      version: userData.version || 1
     };
+    
+    return updatedUserData;
   }
 
   return null;
 };
 
 export const updateUserLastLogin = async (uid: string): Promise<void> => {
+  const now = Timestamp.now();
   const userRef = doc(db, 'users', uid);
   await updateDoc(userRef, {
-    'base.lastLogin': Timestamp.now(),
+    'base.lastLogin': now,
+    'base.lastActive': now,
   });
 };
 
-export const updateSelectedCompanion = async (uid: string, companionId: string): Promise<void> => {
+export const updateUserLastActive = async (uid: string): Promise<void> => {
+  const userRef = doc(db, 'users', uid);
+  await updateDoc(userRef, {
+    'base.lastActive': Timestamp.now(),
+  });
+};
+
+export const updateSelectedCompanion = async (uid: string, companionId: CompanionId): Promise<void> => {
   const userRef = doc(db, 'users', uid);
   await updateDoc(userRef, {
     'settings.selectedCompanion': companionId,
@@ -178,21 +286,31 @@ export const updateTimerSettings = async (
   });
 };
 
+export const updateThemeSettings = async (
+  uid: string,
+  theme: UserDocument['settings']['theme']
+): Promise<void> => {
+  const userRef = doc(db, 'users', uid);
+  await updateDoc(userRef, {
+    'settings.theme': theme,
+  });
+};
+
 export const updateCompanionMood = async (
   uid: string,
-  companionId: 'sayori' | 'yuri' | 'natsuki' | 'monika'
-): Promise<void> => {
+  companionId: CompanionId
+): Promise<CompanionMood> => {
   const userRef = doc(db, 'users', uid);
   const userSnap = await getDoc(userRef);
 
-  if (!userSnap.exists()) return;
+  if (!userSnap.exists()) return 'neutral';
 
   const userData = userSnap.data() as UserDocument;
   const lastInteraction = userData.companions[companionId].lastInteraction.toDate();
   const today = new Date();
   const daysSinceLastInteraction = Math.floor((today.getTime() - lastInteraction.getTime()) / (1000 * 60 * 60 * 24));
 
-  let newMood: UserDocument['companions'][string]['mood'] = 'neutral';
+  let newMood: CompanionMood = 'neutral';
   if (daysSinceLastInteraction > 7) newMood = 'sad';
   else if (daysSinceLastInteraction > 3) newMood = 'annoyed';
   else if (daysSinceLastInteraction === 0) newMood = 'happy';
@@ -200,11 +318,13 @@ export const updateCompanionMood = async (
   await updateDoc(userRef, {
     [`companions.${companionId}.mood`]: newMood,
   });
+  
+  return newMood;
 };
 
 export const updateCompanionStats = async (
   uid: string,
-  companionId: 'sayori' | 'yuri' | 'natsuki' | 'monika',
+  companionId: CompanionId,
   interactionTime: number
 ): Promise<void> => {
   const userRef = doc(db, 'users', uid);
@@ -236,7 +356,7 @@ export const updateCompanionStats = async (
 
 export const updateCompanionAffinity = async (
   uid: string,
-  companionId: 'sayori' | 'yuri' | 'natsuki' | 'monika',
+  companionId: CompanionId,
   interactionTime: number
 ): Promise<void> => {
   const userRef = doc(db, 'users', uid);
@@ -253,4 +373,154 @@ export const updateCompanionAffinity = async (
   await updateDoc(userRef, {
     [`companions.${companionId}.affinityLevel`]: newAffinity,
   });
+};
+
+/**
+ * Record a completed focus session
+ */
+export const recordFocusSession = async (
+  uid: string,
+  session: Omit<FocusSession, 'id'>
+): Promise<void> => {
+  const userRef = doc(db, 'users', uid);
+  const userSnap = await getDoc(userRef);
+  
+  if (!userSnap.exists()) return;
+  
+  const userData = userSnap.data() as UserDocument;
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const lastSessionDate = userData.focusStats.lastSessionDate.toDate();
+  const lastSessionDay = new Date(lastSessionDate.getFullYear(), lastSessionDate.getMonth(), lastSessionDate.getDate());
+  
+  // Check if this is a new day
+  const isNewDay = today.getTime() !== lastSessionDay.getTime();
+  
+  // Calculate daily streak
+  let dailyStreak = userData.focusStats.dailyStreak;
+  if (isNewDay) {
+    // If the last session was yesterday, increment streak
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayDate = new Date(yesterday.getFullYear(), yesterday.getMonth(), yesterday.getDate());
+    
+    if (lastSessionDay.getTime() === yesterdayDate.getTime()) {
+      dailyStreak += 1;
+    } else {
+      // If there was a gap, reset streak
+      dailyStreak = 1;
+    }
+  }
+  
+  // Reset today's focus time if it's a new day
+  const todaysFocusTime = isNewDay ? session.duration : userData.focusStats.todaysFocusTime + session.duration;
+  
+  // Calculate weekly focus time
+  const startOfWeek = new Date(today);
+  startOfWeek.setDate(today.getDate() - today.getDay()); // Start of week (Sunday)
+  
+  let weeklyFocusTime = userData.focusStats.weeklyFocusTime;
+  const lastSessionWeek = new Date(lastSessionDay);
+  lastSessionWeek.setDate(lastSessionDay.getDate() - lastSessionDay.getDay());
+  
+  // Reset weekly focus time if it's a new week
+  if (startOfWeek.getTime() !== lastSessionWeek.getTime()) {
+    weeklyFocusTime = session.duration;
+  } else {
+    weeklyFocusTime += session.duration;
+  }
+  
+  // Calculate average session duration
+  const totalSessions = userData.focusStats.totalSessions + 1;
+  const totalFocusTime = userData.focusStats.totalFocusTime + session.duration;
+  const averageSessionDuration = Math.round(totalFocusTime / totalSessions);
+  
+  // Calculate task completion rate
+  const completedSessions = session.completed 
+    ? userData.focusStats.completedSessions + 1 
+    : userData.focusStats.completedSessions;
+  const taskCompletionRate = Math.round((completedSessions / totalSessions) * 100);
+  
+  // Create session record
+  const newSession: FocusSession = {
+    ...session,
+    id: `session_${Date.now()}`,
+  };
+  
+  // Keep only the 10 most recent sessions
+  const recentSessions = [newSession, ...userData.recentSessions].slice(0, 10);
+  
+  // Update user stats
+  await updateDoc(userRef, {
+    'focusStats.totalFocusTime': totalFocusTime,
+    'focusStats.todaysFocusTime': todaysFocusTime,
+    'focusStats.weeklyFocusTime': weeklyFocusTime,
+    'focusStats.totalSessions': totalSessions,
+    'focusStats.completedSessions': completedSessions,
+    'focusStats.taskCompletionRate': taskCompletionRate,
+    'focusStats.lastSessionDate': session.endTime,
+    'focusStats.dailyStreak': dailyStreak,
+    'focusStats.longestStreak': Math.max(dailyStreak, userData.focusStats.longestStreak),
+    'focusStats.totalBreaks': increment(session.breaks.count),
+    'focusStats.averageSessionDuration': averageSessionDuration,
+    'recentSessions': recentSessions,
+    [`companions.${session.companionId}.stats.sessionsCompleted`]: increment(session.completed ? 1 : 0),
+  });
+  
+  // Update companion stats
+  await updateCompanionStats(uid, session.companionId, session.duration);
+};
+
+/**
+ * Get user's focus statistics
+ */
+export const getUserStats = async (uid: string): Promise<UserStats | null> => {
+  const userDoc = await getUserDocument(uid);
+  if (!userDoc) return null;
+  
+  return userDoc.focusStats;
+};
+
+/**
+ * Update user's daily and weekly goals
+ */
+export const updateFocusGoals = async (
+  uid: string, 
+  dailyGoal?: number,
+  weeklyGoal?: number
+): Promise<void> => {
+  const userRef = doc(db, 'users', uid);
+  const updates: Record<string, number> = {};
+  
+  if (dailyGoal !== undefined) {
+    updates['goals.dailyGoal'] = dailyGoal;
+  }
+  
+  if (weeklyGoal !== undefined) {
+    updates['goals.weeklyGoal'] = weeklyGoal;
+  }
+  
+  if (Object.keys(updates).length > 0) {
+    await updateDoc(userRef, updates);
+  }
+};
+
+/**
+ * Increment completed goals counter
+ */
+export const incrementCompletedGoals = async (
+  uid: string,
+  isChallenge: boolean = false
+): Promise<void> => {
+  const userRef = doc(db, 'users', uid);
+  
+  const updates: Record<string, FieldValue> = {
+    'goals.completedGoals': increment(1)
+  };
+  
+  if (isChallenge) {
+    updates['goals.challengeGoalsCompleted'] = increment(1);
+  }
+  
+  await updateDoc(userRef, updates);
 };
