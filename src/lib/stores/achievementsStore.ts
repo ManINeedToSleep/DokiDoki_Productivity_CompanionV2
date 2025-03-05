@@ -15,6 +15,9 @@ import {
 } from '@/lib/firebase/achievements';
 import { CompanionId } from '@/lib/firebase/companion';
 import { Goal } from '@/lib/firebase/goals';
+import { useAuthStore } from '@/lib/stores/authStore';
+import { getDoc, doc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 
 // Types for pending achievement checks
 interface PendingAchievementCheck {
@@ -71,6 +74,7 @@ interface AchievementsState {
   // Actions
   setAchievements: (achievements: Achievement[]) => void;
   setUnlockedAchievements: (achievementIds: string[]) => void;
+  resetStore: () => void;
   checkFocus: (uid: string, totalMinutes: number, sessionMinutes: number, totalSessions: number) => void;
   checkStreak: (uid: string, currentStreak: number) => void;
   checkCompanion: (
@@ -108,6 +112,15 @@ export const useAchievementsStore = create<AchievementsState>()(
       setAchievements: (achievements) => set({ achievements }),
       
       setUnlockedAchievements: (achievementIds) => set({ unlockedAchievements: achievementIds }),
+      
+      resetStore: () => set({
+        achievements: [],
+        unlockedAchievements: [],
+        pendingUpdates: [],
+        isLoading: false,
+        error: null,
+        lastSyncTime: null
+      }),
       
       checkFocus: (uid, totalMinutes, sessionMinutes, totalSessions) => {
         set((state) => ({
@@ -272,127 +285,130 @@ export const useAchievementsStore = create<AchievementsState>()(
           return;
         }
         
-        // If there are no pending updates, just update the sync time
-        if (state.pendingUpdates.length === 0) {
-          set({ lastSyncTime: now });
-          return;
-        }
-        
         set({ isLoading: true, error: null });
         
         try {
-          // Process all pending updates
-          const updates = [...state.pendingUpdates];
-          
-          for (const update of updates) {
-            switch (update.type) {
-              case 'checkAchievements':
-                switch (update.checkType) {
-                  case 'focus':
-                    if (update.data.totalMinutes !== undefined && 
-                        update.data.sessionMinutes !== undefined && 
-                        update.data.totalSessions !== undefined) {
-                      await checkFocusAchievements(
-                        update.uid,
-                        update.data.totalMinutes,
-                        update.data.sessionMinutes,
-                        update.data.totalSessions
-                      );
-                    }
-                    break;
-                    
-                  case 'streak':
-                    if (update.data.currentStreak !== undefined) {
-                      await checkStreakAchievements(
-                        update.uid,
-                        update.data.currentStreak
-                      );
-                    }
-                    break;
-                    
-                  case 'companion':
-                    if (update.data.companionId !== undefined && 
-                        update.data.affinityLevel !== undefined) {
-                      await checkCompanionAchievements(
-                        update.uid,
-                        update.data.companionId,
-                        update.data.affinityLevel,
-                        update.data.allCompanionsData
-                      );
-                    }
-                    break;
-                    
-                  case 'goal':
-                    if (update.data.completedGoals !== undefined && 
-                        update.data.challengeGoals !== undefined) {
-                      await checkGoalAchievements(
-                        update.uid,
-                        update.data.completedGoals,
-                        update.data.challengeGoals
-                      );
-                    }
-                    break;
-                    
-                  case 'time':
-                    if (update.data.sessionStartTime !== undefined && 
-                        update.data.sessionMinutes !== undefined) {
-                      await checkTimeBasedAchievements(
-                        update.uid,
-                        update.data.sessionStartTime,
-                        update.data.sessionMinutes
-                      );
-                    }
-                    break;
-                    
-                  case 'all':
-                    if (update.data.stats !== undefined) {
-                      await checkAllAchievements(
-                        update.uid,
-                        update.data.stats
-                      );
-                    }
-                    break;
-                    
-                  case 'session':
-                    if (update.data.sessionMinutes !== undefined && 
-                        update.data.sessionStartTime !== undefined) {
-                      await checkSessionAchievements(
-                        update.uid,
-                        update.data.sessionMinutes * 60, // Convert back to seconds
-                        update.data.sessionStartTime
-                      );
-                    }
-                    break;
-                }
-                break;
-                
-              case 'unlockAchievement':
-                await unlockAchievement(
-                  update.uid,
-                  update.achievementId
-                );
-                break;
-                
-              case 'applyReward':
-                await applyAchievementReward(
-                  update.uid,
-                  update.achievementId
-                );
-                break;
+          // First, fetch the user's achievement data from Firebase
+          const userDoc = await getDoc(doc(db, 'users', uid));
+          if (userDoc.exists()) {
+            const userData = userDoc.data();
+            
+            if (userData?.achievements && Array.isArray(userData.achievements)) {
+              // Extract unlocked achievement IDs from Firebase data
+              const unlockedFromFirebase = userData.achievements.map((a: any) => a.id);
+              
+              // Update the unlocked achievements in the store
+              set({ unlockedAchievements: unlockedFromFirebase });
+              
+              console.log('Synced achievements from Firebase:', unlockedFromFirebase.length);
             }
           }
           
-          // Clear pending updates after successful sync
-          set({ 
-            isLoading: false,
-            pendingUpdates: [],
-            lastSyncTime: now
-          });
+          // Process all pending updates
+          if (state.pendingUpdates.length > 0) {
+            console.log(`Processing ${state.pendingUpdates.length} pending achievement updates`);
+            const updates = [...state.pendingUpdates];
+            
+            for (const update of updates) {
+              switch (update.type) {
+                case 'checkAchievements':
+                  switch (update.checkType) {
+                    case 'focus':
+                      if (update.data.totalMinutes !== undefined && 
+                          update.data.sessionMinutes !== undefined && 
+                          update.data.totalSessions !== undefined) {
+                        await checkFocusAchievements(
+                          update.uid,
+                          update.data.totalMinutes,
+                          update.data.sessionMinutes,
+                          update.data.totalSessions
+                        );
+                      }
+                      break;
+                      
+                    case 'streak':
+                      if (update.data.currentStreak !== undefined) {
+                        await checkStreakAchievements(
+                          update.uid,
+                          update.data.currentStreak
+                        );
+                      }
+                      break;
+                      
+                    case 'companion':
+                      if (update.data.companionId !== undefined && 
+                          update.data.affinityLevel !== undefined) {
+                        await checkCompanionAchievements(
+                          update.uid,
+                          update.data.companionId,
+                          update.data.affinityLevel,
+                          update.data.allCompanionsData
+                        );
+                      }
+                      break;
+                      
+                    case 'goal':
+                      if (update.data.completedGoals !== undefined && 
+                          update.data.challengeGoals !== undefined) {
+                        await checkGoalAchievements(
+                          update.uid,
+                          update.data.completedGoals,
+                          update.data.challengeGoals
+                        );
+                      }
+                      break;
+                      
+                    case 'time':
+                      if (update.data.sessionStartTime !== undefined && 
+                          update.data.sessionMinutes !== undefined) {
+                        await checkTimeBasedAchievements(
+                          update.uid,
+                          update.data.sessionStartTime,
+                          update.data.sessionMinutes
+                        );
+                      }
+                      break;
+                      
+                    case 'all':
+                      if (update.data.stats !== undefined) {
+                        await checkAllAchievements(
+                          update.uid,
+                          update.data.stats
+                        );
+                      }
+                      break;
+                      
+                    case 'session':
+                      if (update.data.sessionMinutes !== undefined && 
+                          update.data.sessionStartTime !== undefined) {
+                        await checkSessionAchievements(
+                          update.uid,
+                          update.data.sessionMinutes * 60, // Convert back to seconds
+                          update.data.sessionStartTime
+                        );
+                      }
+                      break;
+                  }
+                  break;
+                  
+                case 'unlockAchievement':
+                  await unlockAchievement(update.uid, update.achievementId);
+                  break;
+                  
+                case 'applyReward':
+                  await applyAchievementReward(update.uid, update.achievementId);
+                  break;
+              }
+            }
+            
+            // Clear the processed updates
+            set({ pendingUpdates: [] });
+          }
+          
+          set({ lastSyncTime: now, isLoading: false });
         } catch (error) {
-          set({ 
-            isLoading: false, 
-            error: error instanceof Error ? error.message : 'Unknown error during sync'
-          });
+          console.error('Error syncing with Firebase:', error);
+          set({ error: (error as Error).message, isLoading: false });
         }
       }
     }),
@@ -412,14 +428,14 @@ export const useAchievementsStore = create<AchievementsState>()(
 // Hook for automatic syncing
 export function useSyncAchievementsData() {
   const { syncWithFirebase } = useAchievementsStore();
+  const { user } = useAuthStore();
   
   // Set up sync on component mount and cleanup on unmount
   React.useEffect(() => {
     // We need a uid to sync with Firebase
-    // This would typically come from your auth context
-    // For now, we'll assume it's available in the component using this hook
-    const uid = localStorage.getItem('userId');
-    if (!uid) return;
+    if (!user || !user.uid) return;
+    
+    const uid = user.uid;
     
     // Initial sync
     syncWithFirebase(uid);
@@ -440,5 +456,5 @@ export function useSyncAchievementsData() {
       clearInterval(syncInterval);
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
-  }, [syncWithFirebase]);
+  }, [syncWithFirebase, user]);
 } 

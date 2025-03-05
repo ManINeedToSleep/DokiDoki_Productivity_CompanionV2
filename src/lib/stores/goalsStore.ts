@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { Timestamp } from 'firebase/firestore';
+import { Timestamp } from '@/lib/firebase';
 import React from 'react';
 import { 
   Goal,
@@ -15,6 +15,9 @@ import {
   assignRandomCompanionGoal
 } from '@/lib/firebase/goals';
 import { CompanionId } from '@/lib/firebase/companion';
+import { useAuthStore } from '@/lib/stores/authStore';
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 
 // Types for pending updates
 interface PendingGoalCreate {
@@ -86,6 +89,7 @@ interface GoalsState {
   assignRandom: (uid: string, companionId: CompanionId) => Promise<{goalId: string, title: string}>;
   getForCompanion: (uid: string, companionId: CompanionId) => Promise<Goal[]>;
   refreshAllGoals: (uid: string) => Promise<void>;
+  ensureDefaultGoals: (uid: string, companionId: CompanionId) => Promise<boolean>;
   syncWithFirebase: (uid: string, force?: boolean) => Promise<void>;
 }
 
@@ -364,6 +368,49 @@ export const useGoalsStore = create<GoalsState>()(
         }
       },
       
+      ensureDefaultGoals: async (uid, companionId) => {
+        const state = get();
+        
+        if (state.isLoading) return false;
+        if (state.goals.length > 0) return false; // User already has goals
+        
+        try {
+          // First check if the user document has any goals
+          const userRef = doc(db, 'users', uid);
+          const userDoc = await getDoc(userRef);
+          
+          if (!userDoc.exists()) return false;
+          
+          const userData = userDoc.data();
+          const userGoals = userData?.goals?.list || [];
+          
+          // If user already has goals in Firebase, just sync them
+          if (userGoals.length > 0) {
+            set({ goals: userGoals });
+            return false; // No need to create default goals
+          }
+          
+          // User needs default goals - refresh goals will create them
+          await refreshGoals(uid);
+          
+          // Get the updated user document
+          const updatedUserDoc = await getDoc(userRef);
+          if (updatedUserDoc.exists()) {
+            const updatedUserData = updatedUserDoc.data();
+            const newGoals = updatedUserData?.goals?.list || [];
+            
+            // Update the local state with the new goals
+            set({ goals: newGoals });
+            return true; // Default goals were created
+          }
+          
+          return false;
+        } catch (error) {
+          console.error('Error ensuring default goals:', error);
+          return false;
+        }
+      },
+      
       syncWithFirebase: async (uid, force = false) => {
         const state = get();
         
@@ -374,69 +421,125 @@ export const useGoalsStore = create<GoalsState>()(
           return;
         }
         
-        // If there are no pending updates, just update the sync time
-        if (state.pendingUpdates.length === 0) {
-          set({ lastSyncTime: now });
-          return;
-        }
-        
         set({ isLoading: true, error: null });
         
         try {
-          // Process all pending updates
-          const updates = [...state.pendingUpdates];
+          // First, fetch the user's goals from Firebase to prevent overwriting progress
+          const userRef = doc(db, 'users', uid);
+          const userDoc = await getDoc(userRef);
           
-          for (const update of updates) {
-            switch (update.type) {
-              case 'createGoal':
-                await createGoal(update.uid, update.goal);
-                break;
+          if (userDoc.exists()) {
+            const userData = userDoc.data();
+            const remoteGoals = userData?.goals?.list || [];
+            
+            // If we have local goals and remote goals, merge them preserving progress
+            if (state.goals.length > 0 && remoteGoals.length > 0) {
+              // Create a map of goal IDs to goals for easier lookup
+              const localGoalsMap = state.goals.reduce((map, goal) => {
+                map[goal.id] = goal;
+                return map;
+              }, {} as Record<string, Goal>);
+              
+              // Update local goals with any changes from remote, preserving local progress
+              const mergedGoals = remoteGoals.map(remoteGoal => {
+                const localGoal = localGoalsMap[remoteGoal.id];
                 
-              case 'createCompanionGoal':
-                await createCompanionGoal(
-                  update.uid, 
-                  update.companionId, 
-                  update.goal
-                );
-                break;
+                // If we have a local version with progress, preserve it
+                if (localGoal) {
+                  // Preserve higher progress and completion status
+                  const highestProgress = Math.max(localGoal.currentMinutes, remoteGoal.currentMinutes);
+                  const isCompleted = localGoal.completed || remoteGoal.completed;
+                  
+                  return {
+                    ...remoteGoal,
+                    currentMinutes: highestProgress,
+                    completed: isCompleted
+                  };
+                }
                 
-              case 'updateGoalProgress':
-                await updateGoalProgress(
-                  update.uid, 
-                  update.goalId, 
-                  update.minutes
-                );
-                break;
-                
-              case 'completeGoal':
-                await completeGoal(update.uid, update.goalId);
-                break;
-                
-              case 'removeGoal':
-                await removeGoal(update.uid, update.goalId);
-                break;
-                
-              case 'updateGoal':
-                await updateGoalFirebase(
-                  update.uid, 
-                  update.goalId, 
-                  update.updates
-                );
-                break;
+                // Otherwise use the remote version
+                return remoteGoal;
+              });
+              
+              // Also include any local goals that aren't in remote
+              state.goals.forEach(localGoal => {
+                const exists = remoteGoals.some(remoteGoal => remoteGoal.id === localGoal.id);
+                if (!exists) {
+                  mergedGoals.push(localGoal);
+                }
+              });
+              
+              // Update local state with merged goals
+              set({ goals: mergedGoals });
+            } else if (remoteGoals.length > 0 && state.goals.length === 0) {
+              // If we only have remote goals, use those
+              set({ goals: remoteGoals });
             }
+            // If we only have local goals, they'll be processed below
           }
           
-          // Clear pending updates after successful sync
-          set({ 
-            isLoading: false,
-            pendingUpdates: [],
-            lastSyncTime: now
-          });
+          // Process all pending updates
+          if (state.pendingUpdates.length > 0) {
+            const updates = [...state.pendingUpdates];
+            
+            for (const update of updates) {
+              switch (update.type) {
+                case 'createGoal':
+                  await createGoal(update.uid, update.goal);
+                  break;
+                  
+                case 'createCompanionGoal':
+                  await createCompanionGoal(
+                    update.uid, 
+                    update.companionId, 
+                    update.goal
+                  );
+                  break;
+                  
+                case 'updateGoalProgress':
+                  await updateGoalProgress(
+                    update.uid, 
+                    update.goalId, 
+                    update.minutes
+                  );
+                  break;
+                  
+                case 'completeGoal':
+                  await completeGoal(update.uid, update.goalId);
+                  break;
+                  
+                case 'removeGoal':
+                  await removeGoal(update.uid, update.goalId);
+                  break;
+                  
+                case 'updateGoal':
+                  await updateGoalFirebase(
+                    update.uid, 
+                    update.goalId, 
+                    update.updates
+                  );
+                  break;
+              }
+            }
+            
+            // Clear pending updates after successful sync
+            set({ pendingUpdates: [], lastSyncTime: now });
+          } else {
+            // If no pending updates but we have local goals, push them to Firebase
+            if (state.goals.length > 0) {
+              await updateDoc(userRef, {
+                'goals.list': state.goals,
+                'goals.lastUpdated': Timestamp.now()
+              });
+            }
+            
+            set({ lastSyncTime: now });
+          }
+          
+          set({ isLoading: false });
         } catch (error) {
-          set({ 
-            isLoading: false, 
-            error: error instanceof Error ? error.message : 'Unknown error during sync'
-          });
+          console.error('Error syncing with Firebase:', error);
+          set({ error: (error as Error).message, isLoading: false });
         }
       }
     }),
@@ -455,16 +558,14 @@ export const useGoalsStore = create<GoalsState>()(
 // Hook for automatic syncing
 export function useSyncGoalsData() {
   const { goals, syncWithFirebase } = useGoalsStore();
+  const { user } = useAuthStore();
   
   // Set up sync on component mount and cleanup on unmount
   React.useEffect(() => {
-    if (goals.length === 0) return;
-    
     // We need a uid to sync with Firebase
-    // This would typically come from your auth context
-    // For now, we'll assume it's available in the component using this hook
-    const uid = localStorage.getItem('userId');
-    if (!uid) return;
+    if (!user || !user.uid) return;
+    
+    const uid = user.uid;
     
     // Initial sync
     syncWithFirebase(uid);
@@ -485,5 +586,5 @@ export function useSyncGoalsData() {
       clearInterval(syncInterval);
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
-  }, [goals, syncWithFirebase]);
+  }, [user, syncWithFirebase]);
 } 
