@@ -13,7 +13,10 @@ const navItems = [
   { label: 'Timer', path: '/dashboard/timer' },
   { label: 'Goals', path: '/dashboard/goals' },
   { label: 'Stats', path: '/dashboard/statistics' },
-  { label: 'Achievements', path: '/dashboard/achievements' }
+  { label: 'Chat', path: '/dashboard/chat' },
+  { label: 'Companion', path: '/dashboard/companion' },
+  { label: 'Achievements', path: '/dashboard/achievements' },
+  { label: 'Settings', path: '/dashboard/settings' },
 ];
 
 export default function Navbar() {
@@ -42,7 +45,7 @@ export default function Navbar() {
   const handleSignOut = async () => {
     try {
       await signOut(auth);
-      router.push('/login');
+      router.push('/auth');
     } catch (error) {
       console.error('Error signing out:', error);
     }

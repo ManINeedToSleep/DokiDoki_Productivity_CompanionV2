@@ -103,7 +103,18 @@ export default function CompanionDisplay({
   
   // Get character sprite path based on mood
   const getCharacterSpritePath = () => {
-    return imagePaths.characterMoods[characterId][mood];
+    // Check if characterId is valid
+    const validCharacterId = characterId && imagePaths.characterMoods[characterId] 
+      ? characterId 
+      : 'sayori'; // Default to sayori if characterId is invalid
+    
+    // Use a default mood if mood is undefined
+    const currentMood = mood || 'happy';
+    
+    // Return the path, with fallbacks at each level
+    return imagePaths.characterMoods[validCharacterId]?.[currentMood] || 
+           imagePaths.characterMoods[validCharacterId]?.['happy'] || 
+           imagePaths.characterSprites.sayori; // Ultimate fallback
   };
   
   return (
@@ -148,7 +159,7 @@ export default function CompanionDisplay({
       >
         <Image
           src={getCharacterSpritePath()}
-          alt={characterId}
+          alt={`${characterId} character with ${mood || 'happy'} expression`}
           fill
           className="object-contain"
           priority

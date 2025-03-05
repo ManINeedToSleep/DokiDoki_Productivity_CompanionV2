@@ -15,7 +15,7 @@ export interface Goal {
   deadline: Timestamp;
   createdAt: Timestamp;
   completed: boolean;
-  type: 'daily' | 'weekly' | 'challenge';
+  type: 'daily' | 'weekly' | 'challenge' | 'custom';
   companionId?: CompanionId; // Track which companion assigned this goal
   reward?: {
     type: 'background' | 'achievement' | 'affinity';
@@ -30,7 +30,7 @@ export const createGoal = async (
   const userRef = doc(db, 'users', uid);
   const newGoal: Goal = {
     ...goal,
-    id: `goal_${Date.now()}`,
+    id: `user_${Date.now()}`,
     createdAt: Timestamp.now(),
     currentMinutes: 0,
     completed: false,
@@ -227,34 +227,151 @@ export const refreshGoals = async (uid: string): Promise<void> => {
   const now = Timestamp.now();
   const goalsList = userData.goals?.list || [];
   
+  // Track if we need to assign new goals
+  let needNewDailyGoal = true;
+  let needNewWeeklyGoal = true;
+  let needNewCompanionGoal = true;
+  let needNewChallengeGoal = true;
+  const companionId = userData.settings?.selectedCompanion || 'sayori';
+  
   // Filter out expired goals and reset daily/weekly goals
-  const updatedGoals = goalsList.map(goal => {
-    // Skip if goal is completed or it's a challenge
-    if (goal.completed || goal.type === 'challenge') return goal;
-
+  const updatedGoals = goalsList.filter(goal => {
+    // Keep completed goals
+    if (goal.completed) return true;
+    
     // Check if goal has expired
     if (goal.deadline.toDate() < now.toDate()) {
-      if (goal.type === 'daily') {
-        // Reset daily goal for next day
-        return {
-          ...goal,
-          currentMinutes: 0,
-          deadline: Timestamp.fromDate(new Date(Date.now() + 24 * 60 * 60 * 1000))
-        };
-      } else if (goal.type === 'weekly') {
-        // Reset weekly goal for next week
-        return {
-          ...goal,
-          currentMinutes: 0,
-          deadline: Timestamp.fromDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000))
-        };
-      }
+      // Don't keep expired goals
+      return false;
     }
-    return goal;
+    
+    // If we have an active goal of each type, mark that we don't need a new one
+    if (goal.type === 'daily' && !goal.completed) {
+      needNewDailyGoal = false;
+    } else if (goal.type === 'weekly' && !goal.completed) {
+      needNewWeeklyGoal = false;
+    } else if (goal.type === 'challenge' && goal.companionId === companionId && !goal.completed) {
+      needNewCompanionGoal = false;
+    } else if (goal.type === 'challenge' && !goal.companionId && !goal.completed) {
+      needNewChallengeGoal = false;
+    }
+    
+    // Keep this active goal
+    return true;
   });
 
+  // Assign new daily goal if needed
+  if (needNewDailyGoal) {
+    const dailyGoals = COMPANION_GOALS[companionId].filter(g => g.type === 'daily');
+    if (dailyGoals.length > 0) {
+      const randomIndex = Math.floor(Math.random() * dailyGoals.length);
+      const selectedGoal = dailyGoals[randomIndex];
+      
+      // Set deadline to end of today
+      const today = new Date();
+      today.setHours(23, 59, 59, 999);
+      
+      const newGoal: Goal = {
+        ...selectedGoal,
+        id: `daily_${Date.now()}`,
+        createdAt: Timestamp.now(),
+        currentMinutes: 0,
+        completed: false,
+        deadline: Timestamp.fromDate(today),
+        companionId: companionId
+      };
+      
+      updatedGoals.push(newGoal);
+    }
+  }
+  
+  // Assign new weekly goal if needed
+  if (needNewWeeklyGoal) {
+    const weeklyGoals = COMPANION_GOALS[companionId].filter(g => g.type === 'weekly');
+    if (weeklyGoals.length > 0) {
+      const randomIndex = Math.floor(Math.random() * weeklyGoals.length);
+      const selectedGoal = weeklyGoals[randomIndex];
+      
+      // Set deadline to end of this week (Sunday)
+      const endOfWeek = new Date();
+      const daysUntilSunday = 7 - endOfWeek.getDay();
+      endOfWeek.setDate(endOfWeek.getDate() + daysUntilSunday);
+      endOfWeek.setHours(23, 59, 59, 999);
+      
+      const newGoal: Goal = {
+        ...selectedGoal,
+        id: `weekly_${Date.now()}`,
+        createdAt: Timestamp.now(),
+        currentMinutes: 0,
+        completed: false,
+        deadline: Timestamp.fromDate(endOfWeek),
+        companionId: companionId
+      };
+      
+      updatedGoals.push(newGoal);
+    }
+  }
+  
+  // Assign new regular challenge goal if needed
+  if (needNewChallengeGoal) {
+    // Get challenge goals from all companions to have more variety
+    const allChallengeGoals: Array<Omit<Goal, 'id' | 'createdAt' | 'currentMinutes' | 'completed' | 'deadline' | 'companionId'>> = [];
+    
+    Object.values(COMPANION_GOALS).forEach(goals => {
+      const challenges = goals.filter(g => g.type === 'challenge');
+      allChallengeGoals.push(...challenges);
+    });
+    
+    if (allChallengeGoals.length > 0) {
+      const randomIndex = Math.floor(Math.random() * allChallengeGoals.length);
+      const selectedGoal = allChallengeGoals[randomIndex];
+      
+      // Set deadline to 3 weeks from now for regular challenges
+      const threeWeeks = new Date();
+      threeWeeks.setDate(threeWeeks.getDate() + 21);
+      
+      const newGoal: Goal = {
+        ...selectedGoal,
+        id: `challenge_${Date.now()}`,
+        createdAt: Timestamp.now(),
+        currentMinutes: 0,
+        completed: false,
+        deadline: Timestamp.fromDate(threeWeeks),
+        // No companionId for regular challenges
+      };
+      
+      updatedGoals.push(newGoal);
+    }
+  }
+  
+  // Assign new companion challenge goal if needed
+  if (needNewCompanionGoal) {
+    const challengeGoals = COMPANION_GOALS[companionId].filter(g => g.type === 'challenge');
+    if (challengeGoals.length > 0) {
+      const randomIndex = Math.floor(Math.random() * challengeGoals.length);
+      const selectedGoal = challengeGoals[randomIndex];
+      
+      // Set deadline to 2 weeks from now
+      const twoWeeks = new Date();
+      twoWeeks.setDate(twoWeeks.getDate() + 14);
+      
+      const newGoal: Goal = {
+        ...selectedGoal,
+        id: `challenge_${companionId}_${Date.now()}`,
+        createdAt: Timestamp.now(),
+        currentMinutes: 0,
+        completed: false,
+        deadline: Timestamp.fromDate(twoWeeks),
+        companionId: companionId
+      };
+      
+      updatedGoals.push(newGoal);
+    }
+  }
+
   await updateDoc(userRef, {
-    'goals.list': updatedGoals
+    'goals.list': updatedGoals,
+    'goals.lastUpdated': now
   });
 };
 
@@ -284,23 +401,21 @@ export const assignRandomCompanionGoal = async (
   // Get companion's available goals
   const companionGoals = COMPANION_GOALS[companionId];
   
+  // Filter to only get challenge goals or select a random goal and force it to be a challenge
+  const challengeGoals = companionGoals.filter(goal => goal.type === 'challenge');
+  const availableGoals = challengeGoals.length > 0 ? challengeGoals : companionGoals;
+  
   // Select a random goal
-  const randomIndex = Math.floor(Math.random() * companionGoals.length);
-  const selectedGoal = companionGoals[randomIndex];
+  const randomIndex = Math.floor(Math.random() * availableGoals.length);
+  const selectedGoal = availableGoals[randomIndex];
   
-  // Set deadline based on goal type
-  let deadline: Date;
-  if (selectedGoal.type === 'daily') {
-    deadline = new Date(Date.now() + 24 * 60 * 60 * 1000); // 1 day
-  } else if (selectedGoal.type === 'weekly') {
-    deadline = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
-  } else {
-    deadline = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000); // 14 days for challenges
-  }
+  // Set deadline to 2 weeks from now for companion challenges
+  const deadline = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000); // 14 days
   
-  // Create the goal
+  // Create the goal, ensuring it's a challenge type
   const goalId = await createCompanionGoal(uid, companionId, {
     ...selectedGoal,
+    type: 'challenge', // Force it to be a challenge type
     deadline: Timestamp.fromDate(deadline)
   });
   
