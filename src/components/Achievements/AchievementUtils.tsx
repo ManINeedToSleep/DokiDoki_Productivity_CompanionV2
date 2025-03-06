@@ -39,9 +39,20 @@ export const processAchievements = (
   unlockedAchievementIds: string[],
   userAchievements?: { id: string, unlockedAt: { toDate: () => Date } }[]
 ): DisplayAchievement[] => {
-  return achievements.map(achievement => {
+  console.log(`🔍 Processing ${achievements.length} achievements with ${unlockedAchievementIds.length} unlocked IDs`);
+  console.log(`🏆 Unlocked achievement IDs:`, unlockedAchievementIds);
+  
+  if (userAchievements && userAchievements.length > 0) {
+    console.log(`📋 User achievements from Firebase:`, userAchievements.map(a => a.id));
+  }
+  
+  const processedAchievements = achievements.map(achievement => {
     const isUnlocked = unlockedAchievementIds.includes(achievement.id);
     const unlockedTimestamp = userAchievements?.find(a => a.id === achievement.id)?.unlockedAt;
+    
+    if (isUnlocked) {
+      console.log(`✅ Achievement "${achievement.title}" (${achievement.id}) is unlocked`);
+    }
     
     return {
       ...achievement,
@@ -49,4 +60,9 @@ export const processAchievements = (
       unlockedAt: unlockedTimestamp ? unlockedTimestamp.toDate() : null
     };
   });
+  
+  const totalUnlocked = processedAchievements.filter(a => a.unlocked).length;
+  console.log(`📊 Processed ${processedAchievements.length} achievements, ${totalUnlocked} unlocked`);
+  
+  return processedAchievements;
 }; 

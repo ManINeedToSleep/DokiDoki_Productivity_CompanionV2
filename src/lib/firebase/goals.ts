@@ -72,6 +72,7 @@ export const updateGoalProgress = async (
   goalId: string,
   minutes: number
 ): Promise<void> => {
+  console.log(`🎯 Updating goal progress for ${goalId} with +${minutes} minutes`);
   const userRef = doc(db, 'users', uid);
   const userDoc = await getDoc(userRef);
   
@@ -85,10 +86,14 @@ export const updateGoalProgress = async (
     if (goal.id === goalId) {
       const newMinutes = goal.currentMinutes + minutes;
       console.log(`📊 Firebase: Updating goal progress for "${goal.title}": ${goal.currentMinutes} → ${newMinutes} minutes`);
+      
+      // Check if the goal is being completed with this update
+      const nowCompleted = newMinutes >= goal.targetMinutes;
+      
       return { 
         ...goal, 
         currentMinutes: newMinutes,
-        completed: newMinutes >= goal.targetMinutes
+        completed: nowCompleted
       };
     }
     return goal;
@@ -97,6 +102,27 @@ export const updateGoalProgress = async (
   await updateDoc(userRef, {
     'goals.list': updatedGoals
   });
+  
+  // Check if any goals were just completed with this update
+  const justCompletedGoals = updatedGoals.filter(goal => 
+    goal.currentMinutes >= goal.targetMinutes && 
+    !goalsList.find(g => g.id === goal.id)?.completed
+  );
+  
+  // If a goal was just completed, trigger the goal achievement check
+  if (justCompletedGoals.length > 0) {
+    console.log(`🏆 Goal(s) just completed, checking goal achievements...`);
+    
+    // Import and call the checkGoalAchievements function
+    const { checkGoalAchievements } = await import('./achievements');
+    
+    // Get all completed goals for achievement check
+    const allCompletedGoals = updatedGoals.filter(g => g.completed);
+    const challengeGoals = updatedGoals.filter(g => g.type === 'challenge' && g.completed);
+    
+    // Check for goal-related achievements
+    await checkGoalAchievements(uid, allCompletedGoals, challengeGoals);
+  }
 };
 
 export const completeGoal = async (

@@ -15,6 +15,8 @@ import {
 } from '@/lib/firebase/achievements';
 import { CompanionId } from '@/lib/firebase/companion';
 import { Goal } from '@/lib/firebase/goals';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 
 // Types for pending achievement checks
 interface PendingAchievementCheck {
@@ -90,7 +92,7 @@ interface AchievementsState {
     totalSessions: number;
     challengeGoalsCompleted: number;
   }) => void;
-  checkSession: (uid: string, sessionSeconds: number, sessionStartTime: Date) => void;
+  checkSession: (uid: string, sessionMinutes: number, sessionStartTime: Date) => void;
   unlockAchievement: (uid: string, achievementId: string) => void;
   applyReward: (uid: string, achievementId: string) => void;
   syncWithFirebase: (uid: string, force?: boolean) => Promise<void>;
@@ -220,8 +222,8 @@ export const useAchievementsStore = create<AchievementsState>()(
         }));
       },
       
-      checkSession: (uid, sessionSeconds, sessionStartTime) => {
-        console.log(`🏆 AchievementsStore: Checking session achievements - Duration: ${sessionSeconds} sec, Start: ${sessionStartTime}`);
+      checkSession: (uid, sessionMinutes, sessionStartTime) => {
+        console.log(`🏆 AchievementsStore: Checking session achievements - Duration: ${sessionMinutes} min, Start: ${sessionStartTime}`);
         
         // Add to pending updates
         set(state => ({
@@ -232,7 +234,7 @@ export const useAchievementsStore = create<AchievementsState>()(
               uid,
               checkType: 'session',
               data: {
-                sessionMinutes: Math.floor(sessionSeconds / 60),
+                sessionMinutes,
                 sessionStartTime
               }
             }
@@ -294,7 +296,20 @@ export const useAchievementsStore = create<AchievementsState>()(
         const now = Date.now();
         if (!force && state.lastSyncTime && (now - state.lastSyncTime < 5 * 60 * 1000)) {
           // Less than 5 minutes since last sync and not forced
+          console.log(`🏆 AchievementsStore: Skipping sync, last sync was ${(now - state.lastSyncTime) / 1000} seconds ago`);
           return;
+        }
+        
+        console.log(`🔄 AchievementsStore: Syncing with Firebase (force=${force})`);
+        
+        // Load achievements from Firebase
+        const userAchievements = await loadAchievementsFromFirebase(uid);
+        if (userAchievements.length > 0) {
+          const unlockedIds = userAchievements.map((a: { id: string }) => a.id);
+          console.log(`🏆 Setting ${unlockedIds.length} unlocked achievements in store`);
+          set({ unlockedAchievements: unlockedIds });
+        } else {
+          console.log(`ℹ️ No achievements found in Firebase, keeping current state`);
         }
         
         // If there are no pending updates, just update the sync time
@@ -384,7 +399,7 @@ export const useAchievementsStore = create<AchievementsState>()(
                       console.log(`🏆 AchievementsStore: Processing session achievement check - Using ${update.data.sessionMinutes} minutes`);
                       await checkSessionAchievements(
                         update.uid,
-                        update.data.sessionMinutes, // Use minutes directly - don't convert back to seconds
+                        update.data.sessionMinutes,
                         update.data.sessionStartTime
                       );
                     }
@@ -471,4 +486,40 @@ export function useSyncAchievementsData() {
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, [syncWithFirebase]);
-} 
+}
+
+// Add a new function to load achievements from Firebase
+const loadAchievementsFromFirebase = async (uid: string) => {
+  console.log(`🏆 Loading achievements from Firebase for user ${uid}`);
+  
+  try {
+    const userRef = doc(db, 'users', uid);
+    const userDoc = await getDoc(userRef);
+    
+    if (!userDoc.exists()) {
+      console.log(`⚠️ Cannot load achievements: User document does not exist`);
+      return [];
+    }
+    
+    const userData = userDoc.data();
+    const achievements = userData.achievements || [];
+    
+    // Log more detailed information about loaded achievements
+    console.log(`✅ Loaded ${achievements.length} achievements from Firebase`);
+    if (achievements.length > 0) {
+      console.log(`🏆 Unlocked achievements:`, achievements.map((a: { id: string }) => a.id));
+      
+      // Log each achievement with its details
+      achievements.forEach((achievement: { id: string, unlockedAt: { seconds: number, nanoseconds: number } }) => {
+        console.log(`  - ${achievement.id} (unlocked at: ${achievement.unlockedAt ? new Date(achievement.unlockedAt.seconds * 1000).toLocaleString() : 'unknown'})`);
+      });
+    } else {
+      console.log(`ℹ️ No achievements found in Firebase`);
+    }
+    
+    return achievements;
+  } catch (error) {
+    console.error(`❌ Error loading achievements from Firebase:`, error);
+    return [];
+  }
+}; 

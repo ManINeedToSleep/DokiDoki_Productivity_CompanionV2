@@ -29,6 +29,7 @@ export default function AchievementsPage() {
   const [displayAchievements, setDisplayAchievements] = useState<DisplayAchievement[]>([]);
   const [filter, setFilter] = useState<'all' | 'unlocked' | 'locked'>('all');
   const [typeFilter, setTypeFilter] = useState<'all' | 'focus' | 'streak' | 'companion' | 'goal' | 'hidden'>('all');
+  const [isRefreshing, setIsRefreshing] = useState(false);
   
   // Get achievements store
   const { 
@@ -37,6 +38,29 @@ export default function AchievementsPage() {
     syncWithFirebase,
     setAchievements
   } = useAchievementsStore();
+  
+  // Force refresh function to ensure all achievements are loaded
+  const forceRefresh = async () => {
+    if (!user) return;
+    
+    setIsRefreshing(true);
+    try {
+      // Force sync achievements with Firebase
+      await syncWithFirebase(user.uid, true);
+      
+      // Refetch user data
+      const updatedUserData = await getUserDocument(user.uid);
+      setUserData(updatedUserData);
+      
+      // Show success message
+      alert('Achievements refreshed successfully!');
+    } catch (error) {
+      console.error('Error refreshing achievements:', error);
+      alert('Error refreshing achievements. Please try again.');
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
   
   // Initialize achievements if they're not already loaded
   useEffect(() => {
@@ -133,14 +157,46 @@ export default function AchievementsPage() {
       <Navbar />
       
       <main className="container mx-auto px-4 py-6">
-        <motion.h1 
-          className="text-2xl font-[Riffic] mb-6 text-center md:text-left"
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          style={{ color: colors.text }}
-        >
-          Your Achievements
-        </motion.h1>
+        <div className="flex justify-between items-center mb-6">
+          <motion.h1 
+            className="text-2xl font-[Riffic] text-center md:text-left"
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            style={{ color: colors.text }}
+          >
+            Your Achievements
+          </motion.h1>
+          
+          <div className="flex gap-2">
+            <motion.button
+              className="text-xs flex items-center gap-1 px-3 py-1 rounded-full font-[Halogen] bg-white shadow-sm"
+              style={{ color: colors.text }}
+              whileHover={{ scale: 1.05 }}
+              onClick={forceRefresh}
+              disabled={isRefreshing}
+            >
+              {isRefreshing ? 'Refreshing...' : '🔄 Refresh Achievements'}
+            </motion.button>
+            
+            <motion.button
+              className="text-xs flex items-center gap-1 px-3 py-1 rounded-full font-[Halogen] bg-white shadow-sm"
+              style={{ color: colors.text }}
+              whileHover={{ scale: 1.05 }}
+              onClick={() => router.push('/dashboard/achievements/cleanup')}
+            >
+              🧹 Cleanup Duplicates
+            </motion.button>
+            
+            <motion.button
+              className="text-xs flex items-center gap-1 px-3 py-1 rounded-full font-[Halogen] bg-white shadow-sm"
+              style={{ color: colors.text }}
+              whileHover={{ scale: 1.05 }}
+              onClick={() => router.push('/dashboard/achievements/debug')}
+            >
+              🔧 Debug
+            </motion.button>
+          </div>
+        </div>
         
         {/* Stats Card */}
         <AchievementStats

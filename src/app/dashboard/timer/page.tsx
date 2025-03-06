@@ -313,8 +313,12 @@ export default function TimerPage() {
         );
         
         // Check session achievements - pass Date object and minutes
-        console.log(`📊 Checking session achievements with: Duration: ${achievementMinutes} minutes, Start time: ${fallbackStartTime || sessionStartTime}`);
-        checkSession(user.uid, achievementMinutes, fallbackStartTime || sessionStartTime);
+        console.log(`📊 Checking session achievements with: Duration: ${achievementMinutes} minutes, Start time: ${fallbackStartTime}`);
+        checkSession(
+          user.uid, 
+          achievementMinutes, // Clearly pass minutes (not sessionSeconds) 
+          fallbackStartTime
+        );
         
         // Force sync ALL stores with Firebase - critically important
         console.log("🔄 Forcing explicit sync of ALL stores to Firebase...");
@@ -327,79 +331,78 @@ export default function TimerPage() {
         console.log("🔄 Forcing sync of achievements to Firebase...");
         await syncAchievements(user.uid, true);
         
-        // Update all active goals with this focus time (minutes)
+        // Update active goals with focus time
+        console.log("🎯 Updating active goals with focus time...");
+        // Get all goals and update them with this session's focus time
+        let minutesForGoals = Math.floor(forcedSessionDuration / 60);
+        
+        // Special case: If this was a 1-minute timer, ensure we count it as a full minute
+        // even if the actual seconds would round down to 0
+        if (workDuration <= 60 && minutesForGoals < 1) {
+          minutesForGoals = 1;
+          console.log(`⏱️ Special case: This was a ${workDuration}s timer, forcing to 1 minute for goals`);
+        }
+        
+        console.log(`⏱️ Converting ${forcedSessionDuration} seconds to ${minutesForGoals} minute${minutesForGoals === 1 ? '' : 's'} for goals`);
+        
         if (userData?.goals?.list) {
-          console.log("🎯 Updating active goals with focus time...");
-          // Get all goals and update them with this session's focus time
-          let minutesForGoals = Math.floor(forcedSessionDuration / 60);
-          
-          // Special case: If this was a 1-minute timer, ensure we count it as a full minute
-          // even if the actual seconds would round down to 0
-          if (workDuration === 60 && minutesForGoals === 0) {
-            minutesForGoals = 1;
-            console.log(`📊 Special case: This was a 1-minute timer, forcing to 1 minute for goals`);
-          }
-          
-          console.log(`Converting ${forcedSessionDuration} seconds to ${minutesForGoals} minutes for goals`);
-          
-          console.log(`Found ${userData.goals.list.length} goals, updating non-completed ones`);
-          let updatedCount = 0;
+          console.log(`📌 Found ${userData.goals.list.length} goals, updating non-completed ones:`);
+          console.log("");
           
           userData.goals.list.forEach(goal => {
             if (!goal.completed) {
-              console.log(`Updating goal: ${goal.title} (${goal.currentMinutes}/${goal.targetMinutes} minutes)`);
-              // Convert seconds to minutes for goal progress
+              const newProgress = goal.currentMinutes + minutesForGoals;
+              console.log(`${goal.title} (${goal.currentMinutes}/${goal.targetMinutes} minutes → ${newProgress}/${goal.targetMinutes} minutes)`);
+              // Update goal progress with the same number of minutes for all goals
               updateProgress(user.uid, goal.id, minutesForGoals);
-              updatedCount++;
             }
           });
-          
-          console.log(`Updated ${updatedCount} goals with ${minutesForGoals} minutes each`);
-          
-          // Force sync goals with Firebase
-          console.log("🔄 Forcing sync of goals to Firebase...");
-          syncGoals(user.uid, true);
-          
-          // Force a refresh of all data from Firebase after all syncs complete
-          console.log("🔄 Explicitly refreshing all user data from Firebase...");
-          
-          // Use a timeout to allow Firebase time to process all of the changes
-          setTimeout(async () => {
-            try {
-              // First refresh user data directly from Firebase
-              console.log("🔄 Refreshing user data from Firebase...");
-              await refreshUserData(user.uid);
-              console.log("✅ User data refreshed from Firebase");
-              
-              // Then fetch the updated document to update the local state in this component
-              console.log("🔄 Fetching updated user data after refresh...");
-              const updatedData = await getUserDocument(user.uid);
-              setUserData(updatedData);
-              
-              // Check if goals were updated
-              if (updatedData?.goals?.list) {
-                console.log(`🔄 Updated goals data: Found ${updatedData.goals.list.length} goals`);
-                updatedData.goals.list.forEach((goal, index) => {
-                  console.log(`🔄 Updated Goal ${index+1}: ${goal.title} - ${goal.currentMinutes}/${goal.targetMinutes} minutes (${goal.completed ? 'Completed' : 'In progress'})`);
-                });
-              }
-              
-              // Check updated focus stats
-              if (updatedData?.focusStats) {
-                console.log("📊 Updated focus stats from Firebase:");
-                console.log(`- Total focus time: ${updatedData.focusStats.totalFocusTime}s`);
-                console.log(`- Today's focus time: ${updatedData.focusStats.todaysFocusTime}s`);
-                console.log(`- Total sessions: ${updatedData.focusStats.totalSessions}`);
-                console.log(`- Completed sessions: ${updatedData.focusStats.completedSessions}`);
-                console.log(`- Daily streak: ${updatedData.focusStats.dailyStreak}`);
-              }
-            } catch (error) {
-              console.error("Error refreshing user data:", error);
-            }
-          }, 3000); // Wait 3 seconds for Firebase to update
+          console.log("");
         } else {
           console.log("No goals found in user data");
         }
+        
+        // Force sync goals with Firebase
+        console.log("🔄 Forcing sync of goals to Firebase...");
+        syncGoals(user.uid, true);
+        
+        // Force a refresh of all data from Firebase after all syncs complete
+        console.log("🔄 Explicitly refreshing all user data from Firebase...");
+        
+        // Use a timeout to allow Firebase time to process all of the changes
+        setTimeout(async () => {
+          try {
+            // First refresh user data directly from Firebase
+            console.log("🔄 Refreshing user data from Firebase...");
+            await refreshUserData(user.uid);
+            console.log("✅ User data refreshed from Firebase");
+            
+            // Then fetch the updated document to update the local state in this component
+            console.log("🔄 Fetching updated user data after refresh...");
+            const updatedData = await getUserDocument(user.uid);
+            setUserData(updatedData);
+            
+            // Check if goals were updated
+            if (updatedData?.goals?.list) {
+              console.log(`🔄 Updated goals data: Found ${updatedData.goals.list.length} goals`);
+              updatedData.goals.list.forEach((goal, index) => {
+                console.log(`🔄 Updated Goal ${index+1}: ${goal.title} - ${goal.currentMinutes}/${goal.targetMinutes} minutes (${goal.completed ? 'Completed' : 'In progress'})`);
+              });
+            }
+            
+            // Check updated focus stats
+            if (updatedData?.focusStats) {
+              console.log("📊 Updated focus stats from Firebase:");
+              console.log(`- Total focus time: ${updatedData.focusStats.totalFocusTime}s`);
+              console.log(`- Today's focus time: ${updatedData.focusStats.todaysFocusTime}s`);
+              console.log(`- Total sessions: ${updatedData.focusStats.totalSessions}`);
+              console.log(`- Completed sessions: ${updatedData.focusStats.completedSessions}`);
+              console.log(`- Daily streak: ${updatedData.focusStats.dailyStreak}`);
+            }
+          } catch (error) {
+            console.error("Error refreshing user data:", error);
+          }
+        }, 3000); // Wait 3 seconds for Firebase to update
       }
     } else if (user && sessionStartTime) {
       // Force the session duration to be the full work duration (e.g., 60 seconds for 1-minute timer)
@@ -462,7 +465,11 @@ export default function TimerPage() {
       
       // Check session achievements - pass Date object and minutes
       console.log(`📊 Checking session achievements with: Duration: ${achievementMinutes} minutes, Start time: ${sessionStartTime}`);
-      checkSession(user.uid, achievementMinutes, sessionStartTime);
+      checkSession(
+        user.uid, 
+        achievementMinutes, // Clearly pass minutes (not sessionSeconds) 
+        sessionStartTime
+      );
       
       // Force sync ALL stores with Firebase - critically important
       console.log("🔄 Forcing explicit sync of ALL stores to Firebase...");
@@ -475,79 +482,78 @@ export default function TimerPage() {
       console.log("🔄 Forcing sync of achievements to Firebase...");
       await syncAchievements(user.uid, true);
       
-      // Update all active goals with this focus time (minutes)
+      // Update active goals with focus time
+      console.log("🎯 Updating active goals with focus time...");
+      // Get all goals and update them with this session's focus time
+      let minutesForGoals = Math.floor(forcedSessionDuration / 60);
+      
+      // Special case: If this was a 1-minute timer, ensure we count it as a full minute
+      // even if the actual seconds would round down to 0
+      if (workDuration <= 60 && minutesForGoals < 1) {
+        minutesForGoals = 1;
+        console.log(`⏱️ Special case: This was a ${workDuration}s timer, forcing to 1 minute for goals`);
+      }
+      
+      console.log(`⏱️ Converting ${forcedSessionDuration} seconds to ${minutesForGoals} minute${minutesForGoals === 1 ? '' : 's'} for goals`);
+      
       if (userData?.goals?.list) {
-        console.log("🎯 Updating active goals with focus time...");
-        // Get all goals and update them with this session's focus time
-        let minutesForGoals = Math.floor(forcedSessionDuration / 60);
-        
-        // Special case: If this was a 1-minute timer, ensure we count it as a full minute
-        // even if the actual seconds would round down to 0
-        if (workDuration === 60 && minutesForGoals === 0) {
-          minutesForGoals = 1;
-          console.log(`📊 Special case: This was a 1-minute timer, forcing to 1 minute for goals`);
-        }
-        
-        console.log(`Converting ${forcedSessionDuration} seconds to ${minutesForGoals} minutes for goals`);
-        
-        console.log(`Found ${userData.goals.list.length} goals, updating non-completed ones`);
-        let updatedCount = 0;
+        console.log(`📌 Found ${userData.goals.list.length} goals, updating non-completed ones:`);
+        console.log("");
         
         userData.goals.list.forEach(goal => {
           if (!goal.completed) {
-            console.log(`Updating goal: ${goal.title} (${goal.currentMinutes}/${goal.targetMinutes} minutes)`);
-            // Convert seconds to minutes for goal progress
+            const newProgress = goal.currentMinutes + minutesForGoals;
+            console.log(`${goal.title} (${goal.currentMinutes}/${goal.targetMinutes} minutes → ${newProgress}/${goal.targetMinutes} minutes)`);
+            // Update goal progress with the same number of minutes for all goals
             updateProgress(user.uid, goal.id, minutesForGoals);
-            updatedCount++;
           }
         });
-        
-        console.log(`Updated ${updatedCount} goals with ${minutesForGoals} minutes each`);
-        
-        // Force sync goals with Firebase
-        console.log("🔄 Forcing sync of goals to Firebase...");
-        syncGoals(user.uid, true);
-        
-        // Force a refresh of all data from Firebase after all syncs complete
-        console.log("🔄 Explicitly refreshing all user data from Firebase...");
-        
-        // Use a timeout to allow Firebase time to process all of the changes
-        setTimeout(async () => {
-          try {
-            // First refresh user data directly from Firebase
-            console.log("🔄 Refreshing user data from Firebase...");
-            await refreshUserData(user.uid);
-            console.log("✅ User data refreshed from Firebase");
-            
-            // Then fetch the updated document to update the local state in this component
-            console.log("🔄 Fetching updated user data after refresh...");
-            const updatedData = await getUserDocument(user.uid);
-            setUserData(updatedData);
-            
-            // Check if goals were updated
-            if (updatedData?.goals?.list) {
-              console.log(`🔄 Updated goals data: Found ${updatedData.goals.list.length} goals`);
-              updatedData.goals.list.forEach((goal, index) => {
-                console.log(`🔄 Updated Goal ${index+1}: ${goal.title} - ${goal.currentMinutes}/${goal.targetMinutes} minutes (${goal.completed ? 'Completed' : 'In progress'})`);
-              });
-            }
-            
-            // Check updated focus stats
-            if (updatedData?.focusStats) {
-              console.log("📊 Updated focus stats from Firebase:");
-              console.log(`- Total focus time: ${updatedData.focusStats.totalFocusTime}s`);
-              console.log(`- Today's focus time: ${updatedData.focusStats.todaysFocusTime}s`);
-              console.log(`- Total sessions: ${updatedData.focusStats.totalSessions}`);
-              console.log(`- Completed sessions: ${updatedData.focusStats.completedSessions}`);
-              console.log(`- Daily streak: ${updatedData.focusStats.dailyStreak}`);
-            }
-          } catch (error) {
-            console.error("Error refreshing user data:", error);
-          }
-        }, 3000); // Wait 3 seconds for Firebase to update
+        console.log("");
       } else {
         console.log("No goals found in user data");
       }
+      
+      // Force sync goals with Firebase
+      console.log("🔄 Forcing sync of goals to Firebase...");
+      syncGoals(user.uid, true);
+      
+      // Force a refresh of all data from Firebase after all syncs complete
+      console.log("🔄 Explicitly refreshing all user data from Firebase...");
+      
+      // Use a timeout to allow Firebase time to process all of the changes
+      setTimeout(async () => {
+        try {
+          // First refresh user data directly from Firebase
+          console.log("🔄 Refreshing user data from Firebase...");
+          await refreshUserData(user.uid);
+          console.log("✅ User data refreshed from Firebase");
+          
+          // Then fetch the updated document to update the local state in this component
+          console.log("🔄 Fetching updated user data after refresh...");
+          const updatedData = await getUserDocument(user.uid);
+          setUserData(updatedData);
+          
+          // Check if goals were updated
+          if (updatedData?.goals?.list) {
+            console.log(`🔄 Updated goals data: Found ${updatedData.goals.list.length} goals`);
+            updatedData.goals.list.forEach((goal, index) => {
+              console.log(`🔄 Updated Goal ${index+1}: ${goal.title} - ${goal.currentMinutes}/${goal.targetMinutes} minutes (${goal.completed ? 'Completed' : 'In progress'})`);
+            });
+          }
+          
+          // Check updated focus stats
+          if (updatedData?.focusStats) {
+            console.log("📊 Updated focus stats from Firebase:");
+            console.log(`- Total focus time: ${updatedData.focusStats.totalFocusTime}s`);
+            console.log(`- Today's focus time: ${updatedData.focusStats.todaysFocusTime}s`);
+            console.log(`- Total sessions: ${updatedData.focusStats.totalSessions}`);
+            console.log(`- Completed sessions: ${updatedData.focusStats.completedSessions}`);
+            console.log(`- Daily streak: ${updatedData.focusStats.dailyStreak}`);
+          }
+        } catch (error) {
+          console.error("Error refreshing user data:", error);
+        }
+      }, 3000); // Wait 3 seconds for Firebase to update
     }
   };
   

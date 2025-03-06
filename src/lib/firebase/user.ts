@@ -394,8 +394,23 @@ export const recordFocusSession = async (
   const userData = userSnap.data() as UserDocument;
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const lastSessionDate = userData.focusStats.lastSessionDate.toDate();
-  const lastSessionDay = new Date(lastSessionDate.getFullYear(), lastSessionDate.getMonth(), lastSessionDate.getDate());
+  
+  // Handle initial case - if no lastSessionDate or it's the default init value
+  let isFirstSession = false;
+  const lastSessionDate = userData.focusStats.lastSessionDate?.toDate();
+  
+  if (!lastSessionDate || (
+    // Check if it's the init date (same as user creation time or has 0 stats)
+    userData.focusStats.totalSessions === 0 && 
+    userData.focusStats.totalFocusTime === 0)
+  ) {
+    isFirstSession = true;
+    console.log(`📊 Firebase: First session ever detected!`);
+  }
+  
+  const lastSessionDay = lastSessionDate ? 
+    new Date(lastSessionDate.getFullYear(), lastSessionDate.getMonth(), lastSessionDate.getDate()) :
+    new Date(today);
   
   // Check if this is a new day
   const isNewDay = today.getTime() !== lastSessionDay.getTime();
@@ -403,7 +418,12 @@ export const recordFocusSession = async (
   
   // Calculate daily streak
   let dailyStreak = userData.focusStats.dailyStreak;
-  if (isNewDay) {
+  
+  if (isFirstSession) {
+    // First ever session - start the streak at 1
+    dailyStreak = 1;
+    console.log(`🎯 Firebase: First session ever - Setting daily streak to 1`);
+  } else if (isNewDay) {
     // If the last session was yesterday, increment streak
     const yesterday = new Date(today);
     yesterday.setDate(yesterday.getDate() - 1);
@@ -417,6 +437,10 @@ export const recordFocusSession = async (
       dailyStreak = 1;
       console.log(`🎯 Firebase: Reset daily streak to 1 (gap in days)`);
     }
+  } else if (dailyStreak === 0) {
+    // Special case: if streak is 0 but we have sessions, set it to 1
+    dailyStreak = 1;
+    console.log(`🎯 Firebase: Fixing daily streak - was 0, setting to 1`);
   }
   
   // Reset today's focus time if it's a new day

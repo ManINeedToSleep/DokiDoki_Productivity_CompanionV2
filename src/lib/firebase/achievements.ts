@@ -1,5 +1,5 @@
 import { db, Timestamp } from '@/lib/firebase';
-import { doc, updateDoc, arrayUnion, getDoc } from 'firebase/firestore';
+import { doc, updateDoc, arrayUnion, getDoc, collection, getDocs } from 'firebase/firestore';
 import type { Goal } from './goals';
 import type { CompanionId } from './companion';
 
@@ -395,36 +395,80 @@ export const ACHIEVEMENTS = {
   }
 };
 
+// Helper function to get achievement details by ID
+const getAchievementById = (achievementId: string): Achievement | undefined => {
+  // Search through all categories in the ACHIEVEMENTS object
+  for (const category in ACHIEVEMENTS) {
+    if (Object.prototype.hasOwnProperty.call(ACHIEVEMENTS, category)) {
+      const achievements = ACHIEVEMENTS[category as keyof typeof ACHIEVEMENTS];
+      
+      // Search through all achievements in this category
+      for (const id in achievements) {
+        if (Object.prototype.hasOwnProperty.call(achievements, id) && id === achievementId) {
+          return achievements[id as keyof typeof achievements] as unknown as Achievement;
+        }
+      }
+    }
+  }
+  
+  return undefined;
+};
+
 // Achievement unlock functions
 export const unlockAchievement = async (
   uid: string,
   achievementId: string
 ): Promise<void> => {
-  // Check if achievement is already unlocked
-  const userRef = doc(db, 'users', uid);
-  const userDoc = await getDoc(userRef);
+  console.log(`🏆 Checking to unlock achievement: ${achievementId}`);
   
-  if (!userDoc.exists()) return;
-  
-  const userData = userDoc.data();
-  const achievements = userData.achievements || [];
-  
-  // Check if already unlocked
-  if (achievements.some((a: { id: string }) => a.id === achievementId)) {
-    return; // Already unlocked
+  try {
+    const userRef = doc(db, 'users', uid);
+    const userDoc = await getDoc(userRef);
+    
+    if (!userDoc.exists()) {
+      console.log(`⚠️ Cannot unlock achievement: User document does not exist`);
+      return;
+    }
+    
+    // Check if achievement is already unlocked to prevent duplicates
+    const userData = userDoc.data();
+    const existingAchievements = userData.achievements || [];
+    const alreadyUnlocked = existingAchievements.some((a: { id: string }) => a.id === achievementId);
+    
+    if (alreadyUnlocked) {
+      console.log(`ℹ️ Achievement "${achievementId}" is already unlocked, skipping`);
+      return;
+    }
+    
+    // Only proceed if not already unlocked
+    console.log(`🎉 Unlocking new achievement: "${achievementId}"`);
+    
+    // Get the current timestamp
+    const timestamp = Timestamp.now();
+    
+    // Update the user document with the new achievement
+    await updateDoc(userRef, {
+      achievements: arrayUnion({
+        id: achievementId,
+        unlockedAt: timestamp
+      })
+    });
+    
+    console.log(`✅ Successfully unlocked achievement: "${achievementId}"`);
+    
+    // Get achievement details
+    const achievement = getAchievementById(achievementId);
+    
+    if (!achievement) {
+      console.log(`⚠️ Could not find details for achievement: ${achievementId}`);
+      return;
+    }
+    
+    // Apply rewards if applicable
+    await applyAchievementReward(uid, achievementId);
+  } catch (error) {
+    console.error(`❌ Error unlocking achievement "${achievementId}":`, error);
   }
-  
-  const achievement = {
-    id: achievementId,
-    unlockedAt: Timestamp.now()
-  };
-
-  await updateDoc(userRef, {
-    achievements: arrayUnion(achievement)
-  });
-  
-  // Apply rewards if applicable
-  await applyAchievementReward(uid, achievementId);
 };
 
 // Apply the reward for an achievement
@@ -474,24 +518,34 @@ export const checkFocusAchievements = async (
   sessionMinutes: number,
   totalSessions: number
 ): Promise<void> => {
+  console.log(`🏆 Detailed focus achievement check:
+  - Total focus time: ${totalMinutes} minutes
+  - Current session: ${sessionMinutes} minutes
+  - Total sessions: ${totalSessions} sessions`);
+  
   // Basic focus achievements
   if (sessionMinutes >= 1) {
+    console.log(`🏆 "First Step" criteria met (${sessionMinutes} ≥ 1 min)`);
     await unlockAchievement(uid, 'first_session');
   }
   
   if (sessionMinutes >= ACHIEVEMENTS.focus.master.requirement.value) {
+    console.log(`🏆 "Focus Master" criteria met (${sessionMinutes} ≥ ${ACHIEVEMENTS.focus.master.requirement.value} min)`);
     await unlockAchievement(uid, 'master');
   }
   
   if (sessionMinutes >= ACHIEVEMENTS.focus.marathon.requirement.value) {
+    console.log(`🏆 "Focus Marathon" criteria met (${sessionMinutes} ≥ ${ACHIEVEMENTS.focus.marathon.requirement.value} min)`);
     await unlockAchievement(uid, 'marathon');
   }
   
   if (totalMinutes >= ACHIEVEMENTS.focus.dedication.requirement.value) {
+    console.log(`🏆 "Dedicated Student" criteria met (${totalMinutes} ≥ ${ACHIEVEMENTS.focus.dedication.requirement.value} min)`);
     await unlockAchievement(uid, 'dedication');
   }
   
   if (totalSessions >= ACHIEVEMENTS.focus.centurion.requirement.value) {
+    console.log(`🏆 "Centurion" criteria met (${totalSessions} ≥ ${ACHIEVEMENTS.focus.centurion.requirement.value} sessions)`);
     await unlockAchievement(uid, 'centurion');
   }
 };
@@ -578,6 +632,8 @@ export const checkTimeBasedAchievements = async (
   sessionStartTime: Date,
   sessionMinutes: number
 ): Promise<void> => {
+  console.log(`🏆 Checking time-based achievements with ${sessionMinutes} minutes at hour ${sessionStartTime.getHours()}`);
+  
   const hour = sessionStartTime.getHours();
   const day = sessionStartTime.getDay(); // 0 = Sunday, 6 = Saturday
   const isWeekend = day === 0 || day === 6;
@@ -677,9 +733,162 @@ export const checkSessionAchievements = async (
 ) => {
   console.log(`🏆 Checking session achievements with ${sessionMinutes} minutes at ${sessionStartTime}`);
   
-  // Check focus achievements for this specific session - pass minutes directly
-  await checkFocusAchievements(uid, 0, sessionMinutes, 0);
+  try {
+    // Get user stats first to have accurate counts
+    const userRef = doc(db, "users", uid);
+    const userDoc = await getDoc(userRef);
+    
+    if (!userDoc.exists()) {
+      console.error(`User document not found for ${uid}`);
+      return;
+    }
+    
+    const userData = userDoc.data();
+    const stats = userData.stats || {};
+    const totalFocusTime = Math.floor((stats.totalFocusTime || 0) / 60); // Convert seconds to minutes
+    const totalSessions = stats.totalSessions || 0;
+    
+    console.log(`🏆 Detailed session achievement check:
+Total focus time: ${totalFocusTime} minutes
+Current session: ${sessionMinutes} minutes
+Total sessions: ${totalSessions} sessions`);
+    
+    // Check if goals were completed in this session
+    const goalsRef = collection(db, "users", uid, "goals");
+    const goalsSnapshot = await getDocs(goalsRef);
+    const completedGoals = goalsSnapshot.docs
+      .map(doc => doc.data() as Goal)
+      .filter(goal => 
+        goal.completed && 
+        goal.currentMinutes >= goal.targetMinutes
+      );
+    
+    // First Goal achievement
+    if (completedGoals.length > 0) {
+      await unlockAchievement(uid, 'your_first_goal');
+    }
+    
+    // Then check focus achievements with the correctly loaded stats
+    await checkFocusAchievements(uid, totalFocusTime, sessionMinutes, totalSessions);
+    
+    // Check time-based achievements
+    console.log(`🏆 Checking time-based achievements with ${sessionMinutes} minutes at hour ${sessionStartTime.getHours()}`);
+    await checkTimeBasedAchievements(uid, sessionStartTime, sessionMinutes);
+  } catch (error) {
+    console.error("Error checking session achievements:", error);
+  }
+};
+
+// Utility function to clean up duplicate achievements
+export const cleanupDuplicateAchievements = async (uid: string): Promise<void> => {
+  console.log(`🧹 Cleaning up duplicate achievements for user ${uid}`);
   
-  // Check time-based achievements - pass minutes directly
-  await checkTimeBasedAchievements(uid, sessionStartTime, sessionMinutes);
+  try {
+    const userRef = doc(db, 'users', uid);
+    const userDoc = await getDoc(userRef);
+    
+    if (!userDoc.exists()) {
+      console.log(`⚠️ Cannot clean up: User document does not exist`);
+      return;
+    }
+    
+    const userData = userDoc.data();
+    const achievements = userData.achievements || [];
+    
+    // Track ids we've seen
+    const seenIds = new Set<string>();
+    const uniqueAchievements = [];
+    
+    // Only keep the first occurrence of each achievement id
+    for (const achievement of achievements) {
+      if (!seenIds.has(achievement.id)) {
+        seenIds.add(achievement.id);
+        uniqueAchievements.push(achievement);
+      }
+    }
+    
+    // Only update if we found duplicates
+    if (uniqueAchievements.length < achievements.length) {
+      console.log(`🧹 Removing ${achievements.length - uniqueAchievements.length} duplicate achievements`);
+      
+      await updateDoc(userRef, {
+        achievements: uniqueAchievements
+      });
+      
+      console.log(`✅ Successfully cleaned up duplicate achievements`);
+    } else {
+      console.log(`✅ No duplicate achievements found`);
+    }
+  } catch (error) {
+    console.error("Error cleaning up duplicate achievements:", error);
+  }
+};
+
+// Debug utility to help diagnose achievement issues
+export const debugAchievementState = async (uid: string): Promise<void> => {
+  console.log(`🔍 Debugging achievement state for user: ${uid}`);
+  
+  try {
+    // 1. Check Firebase user document
+    const userRef = doc(db, 'users', uid);
+    const userDoc = await getDoc(userRef);
+    
+    if (!userDoc.exists()) {
+      console.log(`⚠️ User document does not exist in Firebase!`);
+      return;
+    }
+    
+    // 2. Get achievements from user document
+    const userData = userDoc.data();
+    const firebaseAchievements = userData.achievements || [];
+    
+    console.log(`📊 Found ${firebaseAchievements.length} achievements in Firebase:`);
+    firebaseAchievements.forEach((achievement: { id: string, unlockedAt: { seconds: number, nanoseconds: number } }, index: number) => {
+      const unlockTime = achievement.unlockedAt 
+        ? new Date(achievement.unlockedAt.seconds * 1000).toLocaleString()
+        : 'unknown';
+        
+      console.log(`  ${index + 1}. ID: "${achievement.id}", Unlocked: ${unlockTime}`);
+    });
+    
+    // 3. Check for duplicates
+    const achievementIds = firebaseAchievements.map((a: { id: string }) => a.id);
+    const uniqueIds = new Set(achievementIds);
+    
+    if (uniqueIds.size < achievementIds.length) {
+      console.log(`⚠️ DUPLICATE ACHIEVEMENTS DETECTED!`);
+      console.log(`  Total achievements: ${achievementIds.length}`);
+      console.log(`  Unique achievement IDs: ${uniqueIds.size}`);
+      
+      // Count occurrences of each ID
+      const counts: Record<string, number> = {};
+      achievementIds.forEach((id: string) => {
+        counts[id] = (counts[id] || 0) + 1;
+      });
+      
+      // Report duplicates
+      console.log(`  Duplicate achievements:`);
+      Object.entries(counts)
+        .filter(([, count]) => count > 1)
+        .forEach(([id, count]) => {
+          console.log(`    - "${id}" appears ${count} times`);
+        });
+        
+      console.log(`  Please run the cleanup utility at /dashboard/achievements/cleanup`);
+    } else {
+      console.log(`✅ No duplicate achievements found`);
+    }
+    
+    // 4. Check for achievement definitions
+    for (const achievement of firebaseAchievements) {
+      const achievementDef = getAchievementById(achievement.id);
+      if (!achievementDef) {
+        console.log(`⚠️ Achievement "${achievement.id}" exists in user data but has no definition!`);
+      }
+    }
+    
+    console.log(`🏆 Achievement debugging complete`);
+  } catch (error) {
+    console.error(`❌ Error debugging achievements:`, error);
+  }
 };
