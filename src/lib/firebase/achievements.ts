@@ -258,10 +258,10 @@ export const ACHIEVEMENTS = {
 
   // Goal-based achievements
   goals: {
-    goal_setter: {
-      id: 'goal_setter',
-      title: 'Goal Setter',
-      description: 'Create your first study goal',
+    your_first_goal: {
+      id: 'your_first_goal',
+      title: 'Your First Goal',
+      description: 'Complete your first study goal',
       icon: '📝',
       type: 'goal',
       requirement: { type: 'goals', value: 1 },
@@ -555,7 +555,7 @@ export const checkGoalAchievements = async (
   challengeGoals: Goal[]
 ): Promise<void> => {
   if (completedGoals.length >= 1) {
-    await unlockAchievement(uid, 'goal_setter');
+    await unlockAchievement(uid, 'your_first_goal');
   }
   
   if (completedGoals.length >= ACHIEVEMENTS.goals.achiever.requirement.value) {

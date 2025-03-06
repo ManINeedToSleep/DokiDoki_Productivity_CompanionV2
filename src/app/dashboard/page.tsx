@@ -13,6 +13,7 @@ import Achievements from '@/components/Dashboard/Achievements';
 import { motion } from 'framer-motion';
 import { CompanionId } from '@/lib/firebase/companion';
 import PolkaDotBackground from '@/components/Common/BackgroundCustom/PolkadotBackground';
+import { getCharacterDotColor } from '@/components/Common/CharacterColor/CharacterColor';
 
 export default function Dashboard() {
   const { user, isLoading } = useAuthStore();
@@ -53,22 +54,6 @@ export default function Dashboard() {
       </div>
     );
   }
-  
-  // Get character-specific colors for polka dots
-  const getCharacterDotColor = (id: CompanionId) => {
-    switch (id) {
-      case 'sayori':
-        return '#F5C0DF';
-      case 'natsuki':
-        return '#FFCCD3';
-      case 'yuri':
-        return '#D1CFFF';
-      case 'monika':
-        return '#C5E8D1';
-      default:
-        return '#F5C0DF';
-    }
-  };
   
   const selectedCompanion = userData?.settings?.selectedCompanion || 'sayori';
   const dotColor = getCharacterDotColor(selectedCompanion);
