@@ -31,7 +31,8 @@ export default function GoalsPage() {
   // Get goals store
   const { 
     markComplete, 
-    syncWithFirebase
+    syncWithFirebase,
+    ensureDefaultGoals
   } = useGoalsStore();
   
   // Get achievements store
@@ -117,12 +118,27 @@ export default function GoalsPage() {
       setIsLoadingData(true);
       const data = await getUserDocument(user.uid);
       setUserData(data);
+      
+      // Check if user has goals and create default ones if needed
+      const companionId = data?.settings?.selectedCompanion || 'sayori';
+      const hasGoals = data?.goals?.list && data.goals.list.length > 0;
+      
+      if (!hasGoals) {
+        console.log('No goals found for user, ensuring default goals...');
+        const created = await ensureDefaultGoals(user.uid, companionId);
+        if (created) {
+          console.log('Default goals created successfully');
+          // Fetch updated user data after creating goals
+          const updatedData = await getUserDocument(user.uid);
+          setUserData(updatedData);
+        }
+      }
     } catch (error) {
       console.error('Error fetching user data:', error);
     } finally {
       setIsLoadingData(false);
     }
-  }, [user]);
+  }, [user, ensureDefaultGoals]);
 
   useEffect(() => {
     if (!user) {

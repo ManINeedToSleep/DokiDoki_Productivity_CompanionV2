@@ -36,7 +36,9 @@ export default function AchievementsPage() {
     achievements, 
     unlockedAchievements,
     syncWithFirebase,
-    setAchievements
+    setAchievements,
+    resetStore,
+    checkAll
   } = useAchievementsStore();
   
   // Force refresh function to ensure all achievements are loaded
@@ -64,15 +66,67 @@ export default function AchievementsPage() {
   
   // Initialize achievements if they're not already loaded
   useEffect(() => {
-    if (achievements.length === 0) {
-      // Convert the ACHIEVEMENTS object to an array
-      const achievementsArray = Object.values(ACHIEVEMENTS).flatMap(category => 
-        Object.values(category)
-      ) as Achievement[];
+    // Debug: Log all available achievement categories
+    console.log('Available achievement categories:', Object.keys(ACHIEVEMENTS));
+    
+    // Debug: Log the raw ACHIEVEMENTS object
+    console.log('Raw ACHIEVEMENTS object:', ACHIEVEMENTS);
+    
+    // Reset store to clear persistence if we only have some achievement types
+    const achievementTypes = achievements.reduce<Record<string, number>>((acc, a) => {
+      acc[a.type] = (acc[a.type] || 0) + 1;
+      return acc;
+    }, {});
+    
+    console.log('Achievement counts by type:', achievementTypes);
+    
+    // Check if we're missing achievement types or have too few achievements
+    const hasAllTypes = 
+      (achievementTypes['focus'] || 0) > 0 && 
+      (achievementTypes['streak'] || 0) > 0 && 
+      (achievementTypes['companion'] || 0) > 0 && 
+      (achievementTypes['goal'] || 0) > 0 &&
+      (achievementTypes['hidden'] || 0) > 0;
       
-      setAchievements(achievementsArray);
+    if (achievements.length < 10 || !hasAllTypes) {
+      // We're missing some achievement types, reset the store
+      console.log('Missing achievement types, resetting store');
+      resetStore();
+      
+      // Convert the ACHIEVEMENTS object to an array
+      const achievementsArray: Achievement[] = [];
+      
+      // Properly extract ALL achievements from each category
+      Object.entries(ACHIEVEMENTS).forEach(([category, achievementsInCategory]) => {
+        console.log(`Processing category: ${category} with:`, 
+          typeof achievementsInCategory === 'object' ? 
+          Object.keys(achievementsInCategory || {}).length + ' items' : 
+          achievementsInCategory);
+          
+        if (typeof achievementsInCategory === 'object' && achievementsInCategory !== null) {
+          Object.values(achievementsInCategory).forEach(achievement => {
+            if (achievement && typeof achievement === 'object' && 'id' in achievement && 'type' in achievement) {
+              achievementsArray.push(achievement as Achievement);
+            }
+          });
+        }
+      });
+      
+      console.log('All achievements loaded:', achievementsArray.length);
+      console.log('Achievement types distribution:', 
+        achievementsArray.reduce((acc, a) => {
+          acc[a.type] = (acc[a.type] || 0) + 1;
+          return acc;
+        }, {} as Record<string, number>)
+      );
+      
+      if (achievementsArray.length > 0) {
+        setAchievements(achievementsArray);
+      } else {
+        console.error('Failed to load achievements from ACHIEVEMENTS object');
+      }
     }
-  }, [achievements.length, setAchievements]);
+  }, [achievements, resetStore, setAchievements]);
   
   useEffect(() => {
     if (!isLoading && !user) {
@@ -85,6 +139,21 @@ export default function AchievementsPage() {
         try {
           const data = await getUserDocument(user.uid);
           setUserData(data);
+          
+          // Explicitly sync with Firebase
+          syncWithFirebase(user.uid, true);
+          
+          // Check all achievements when user data is loaded
+          if (data) {
+            checkAll(user.uid, {
+              totalFocusTime: data.focusStats?.totalFocusTime || 0,
+              weekStreak: data.focusStats?.weekStreak || 0,
+              longestStreak: data.focusStats?.longestStreak || 0,
+              completedGoals: data.goals?.completedGoals || 0,
+              totalSessions: data.focusStats?.totalSessions || 0,
+              challengeGoalsCompleted: data.goals?.challengeGoalsCompleted || 0
+            });
+          }
         } catch (error) {
           console.error('Error fetching user data:', error);
         } finally {
@@ -94,18 +163,7 @@ export default function AchievementsPage() {
       
       fetchUserData();
     }
-  }, [user, isLoading, router]);
-  
-  // Sync with Firebase every 3 minutes
-  useEffect(() => {
-    if (user) {
-      const interval = setInterval(() => {
-        syncWithFirebase(user.uid);
-      }, 3 * 60 * 1000);
-      
-      return () => clearInterval(interval);
-    }
-  }, [user, syncWithFirebase]);
+  }, [user, isLoading, router, checkAll, syncWithFirebase]);
   
   // Process achievements data
   useEffect(() => {
@@ -147,6 +205,9 @@ export default function AchievementsPage() {
     
     return true;
   });
+  
+  console.log('Filtered achievements:', filteredAchievements);
+  console.log('Filter:', filter, 'Type filter:', typeFilter);
   
   // Calculate stats
   const stats = calculateAchievementStats(displayAchievements);
