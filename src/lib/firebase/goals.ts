@@ -80,12 +80,19 @@ export const updateGoalProgress = async (
   const userData = userDoc.data() as UserDocument;
   const goalsList = userData.goals?.list || [];
   
-  // Update only the specific goal's progress
-  const updatedGoals = goalsList.map(goal => 
-    goal.id === goalId 
-      ? { ...goal, currentMinutes: minutes }
-      : goal
-  );
+  // Update only the specific goal's progress - INCREMENT minutes, don't set them
+  const updatedGoals = goalsList.map(goal => {
+    if (goal.id === goalId) {
+      const newMinutes = goal.currentMinutes + minutes;
+      console.log(`📊 Firebase: Updating goal progress for "${goal.title}": ${goal.currentMinutes} → ${newMinutes} minutes`);
+      return { 
+        ...goal, 
+        currentMinutes: newMinutes,
+        completed: newMinutes >= goal.targetMinutes
+      };
+    }
+    return goal;
+  });
 
   await updateDoc(userRef, {
     'goals.list': updatedGoals

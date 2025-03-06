@@ -88,22 +88,54 @@ function calculateUpdatedStats(currentStats: UserStats, newSession: FocusSession
   const sessionDuration = newSession.duration;
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const lastSessionDate = currentStats.lastSessionDate?.toDate().getTime() || 0;
-  const isNewDay = lastSessionDate < today;
+  const lastSessionDate = currentStats.lastSessionDate?.toDate() || null;
+  const lastSessionTime = lastSessionDate?.getTime() || 0;
+  const isNewDay = lastSessionTime < today;
+  
+  console.log(`📊 Calculating stats - Last session: ${lastSessionDate}, Is new day: ${isNewDay}`);
   
   // Calculate streaks
   let dailyStreak = currentStats.dailyStreak;
   let weekStreak = currentStats.weekStreak;
   
-  if (isNewDay) {
+  // Check if this is the user's first session ever (no last session date)
+  const isFirstSession = !lastSessionDate;
+  
+  if (isFirstSession) {
+    // First ever session - start the streaks at 1
+    dailyStreak = 1;
+    console.log(`📊 First session ever detected - Setting daily streak to 1`);
+  } else if (isNewDay) {
     // If it's a new day, increment the daily streak
     dailyStreak += 1;
+    console.log(`📊 New day detected - Incrementing daily streak: ${currentStats.dailyStreak} → ${dailyStreak}`);
     
-    // Check if we completed a week
-    const lastSessionDay = new Date(lastSessionDate).getDay();
-    const today = new Date().getDay();
-    if (lastSessionDay > today) { // We've wrapped around to a new week
-      weekStreak += 1;
+    // Check if this completes a calendar week
+    // We need to check if we've completed a full calendar week (Sunday to Saturday)
+    // First, check if there was a last session date
+    if (lastSessionDate) {
+      // Get the week number for last session and current date
+      const getWeekNumber = (d: Date) => {
+        // Copy date to avoid modifying the original
+        const date = new Date(d.getTime());
+        // Set to the nearest Thursday (to handle year boundaries correctly)
+        date.setHours(0, 0, 0, 0);
+        date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
+        // Get first day of year
+        const week1 = new Date(date.getFullYear(), 0, 4);
+        // Return week number
+        return Math.round(((date.getTime() - week1.getTime()) / 86400000 - 3 + 
+                          (week1.getDay() + 6) % 7) / 7) + 1;
+      };
+      
+      const lastWeek = getWeekNumber(lastSessionDate);
+      const currentWeek = getWeekNumber(now);
+      
+      // Different week and we're not just starting fresh (dailyStreak > 1)
+      if (currentWeek !== lastWeek && dailyStreak > 1) {
+        weekStreak += 1;
+        console.log(`📊 New week detected (Week ${lastWeek} → Week ${currentWeek}) - Incrementing week streak: ${currentStats.weekStreak} → ${weekStreak}`);
+      }
     }
   }
   
@@ -112,8 +144,20 @@ function calculateUpdatedStats(currentStats: UserStats, newSession: FocusSession
     ? sessionDuration 
     : currentStats.todaysFocusTime + sessionDuration;
   
-  // Calculate weekly focus time (simplified - a more accurate implementation would check the actual week)
-  const weeklyFocusTime = currentStats.weeklyFocusTime + sessionDuration;
+  // Calculate weekly focus time - reset if it's a new week
+  let weeklyFocusTime = currentStats.weeklyFocusTime;
+  
+  // If it's a new week, reset weekly focus time
+  const now_day = now.getDay(); // 0 = Sunday
+  const lastDay = lastSessionDate ? lastSessionDate.getDay() : -1;
+  
+  // Reset weekly focus time if we've crossed from Saturday to Sunday (end of week to start of new week)
+  if (lastDay === 6 && now_day === 0) {
+    console.log(`📊 End of week detected - Resetting weekly focus time (${currentStats.weeklyFocusTime}s → 0s)`);
+    weeklyFocusTime = sessionDuration; // Start with this session's time
+  } else {
+    weeklyFocusTime += sessionDuration; // Add to existing weekly time
+  }
   
   return {
     ...currentStats,
@@ -126,7 +170,7 @@ function calculateUpdatedStats(currentStats: UserStats, newSession: FocusSession
       : currentStats.completedSessions,
     dailyStreak,
     weekStreak,
-    longestStreak: Math.max(currentStats.longestStreak, weekStreak),
+    longestStreak: Math.max(currentStats.longestStreak, dailyStreak),
     averageFocusPerDay: (currentStats.totalFocusTime + sessionDuration) / (dailyStreak || 1),
     taskCompletionRate: ((currentStats.completedSessions + (newSession.completed ? 1 : 0)) / 
       (currentStats.totalSessions + 1)) * 100,
@@ -176,9 +220,44 @@ export const useUserStore = create<UserState>()(
       },
       
       recordFocusSession: (uid, session) => {
+        console.log("🔄 UserStore: Recording focus session to store", session);
         // Update local state immediately
         set((state) => {
-          if (!state.user) return state;
+          if (!state.user) {
+            console.error("❌ UserStore: No user found in state, cannot record session");
+            
+            // Attempt to load user data first, then record the session
+            console.log("🔄 UserStore: Attempting to load user data before recording session");
+            
+            // Use setTimeout to avoid state update during rendering
+            setTimeout(async () => {
+              try {
+                console.log("🔄 UserStore: Fetching user document from Firebase...");
+                set({ isLoading: true });
+                const userData = await getUserDocument(uid);
+                
+                if (userData) {
+                  console.log("✅ UserStore: User data loaded successfully from Firebase");
+                  set({ 
+                    user: userData,
+                    isLoading: false
+                  });
+                  
+                  // Now record the session with the loaded user
+                  console.log("🔄 UserStore: Now recording session with loaded user data");
+                  get().recordFocusSession(uid, session);
+                } else {
+                  console.error("❌ UserStore: Failed to load user data, user document not found");
+                  set({ isLoading: false });
+                }
+              } catch (error) {
+                console.error("❌ UserStore: Error loading user data:", error);
+                set({ isLoading: false });
+              }
+            }, 0);
+            
+            return state;
+          }
           
           // Generate a temporary ID for the session
           const newSession = {
@@ -186,14 +265,18 @@ export const useUserStore = create<UserState>()(
             id: `temp_session_${Date.now()}`,
           } as FocusSession;
           
+          console.log("📊 UserStore: Calculating updated stats based on session");
           // Calculate new stats based on the session
           const updatedStats = calculateUpdatedStats(state.user.focusStats, newSession);
+          console.log("📊 UserStore: Current stats:", state.user.focusStats);
+          console.log("📊 UserStore: Updated stats:", updatedStats);
           
           // Update companion stats locally
           const companionId = session.companionId;
           const companion = state.user.companions[companionId];
           
           if (companion) {
+            console.log(`🧠 UserStore: Updating stats for companion ${companionId}`);
             const updatedCompanion = {
               ...companion,
               stats: {
@@ -226,6 +309,7 @@ export const useUserStore = create<UserState>()(
             };
           }
           
+          console.log("🔄 UserStore: Companion not found, updating only user stats");
           return {
             user: {
               ...state.user,
@@ -242,6 +326,10 @@ export const useUserStore = create<UserState>()(
             ]
           };
         });
+        
+        // Trigger sync to Firebase
+        console.log("🔄 UserStore: Triggering sync to Firebase after recording session");
+        get().syncWithFirebase(uid);
       },
       
       updateSelectedCompanion: (uid, companionId) => {
@@ -424,17 +512,52 @@ export const useUserStore = create<UserState>()(
       
       syncWithFirebase: async (uid, force = false) => {
         const state = get();
-        if (!state.user) return;
+        if (!state.user) {
+          console.error("❌ UserStore: No user found in state, cannot sync with Firebase");
+          
+          // Attempt to load user data first, then try syncing again
+          console.log("🔄 UserStore: Attempting to load user data before syncing");
+          try {
+            console.log("🔄 UserStore: Fetching user document from Firebase...");
+            set({ isLoading: true });
+            const userData = await getUserDocument(uid);
+            
+            if (userData) {
+              console.log("✅ UserStore: User data loaded successfully, will attempt sync");
+              set({ 
+                user: userData,
+                isLoading: false
+              });
+              
+              // Now try syncing again with the loaded user
+              console.log("🔄 UserStore: Now attempting to sync with loaded user data");
+              await get().syncWithFirebase(uid, force);
+              return;
+            } else {
+              console.error("❌ UserStore: Failed to load user data, user document not found");
+              set({ isLoading: false });
+              return;
+            }
+          } catch (error) {
+            console.error("❌ UserStore: Error loading user data:", error);
+            set({ isLoading: false });
+            return;
+          }
+        }
+        
+        console.log(`🔄 UserStore: Syncing with Firebase (force=${force}). ${state.pendingUpdates.length} pending updates`);
         
         // Check if we need to sync (if not forced)
         const now = Date.now();
         if (!force && state.lastSyncTime && (now - state.lastSyncTime < 5 * 60 * 1000)) {
           // Less than 5 minutes since last sync and not forced
+          console.log(`🔄 UserStore: Skipping sync, last sync was ${Math.round((now - state.lastSyncTime) / 1000)} seconds ago`);
           return;
         }
         
         // If there are no pending updates, just update the sync time
         if (state.pendingUpdates.length === 0) {
+          console.log("🔄 UserStore: No pending updates, updating sync time only");
           set({ lastSyncTime: now });
           return;
         }
@@ -446,6 +569,8 @@ export const useUserStore = create<UserState>()(
           const updates = [...state.pendingUpdates];
           
           for (const update of updates) {
+            console.log(`🔄 UserStore: Processing update of type ${update.type}`);
+            
             switch (update.type) {
               case 'updateFocusGoals':
                 await updateFocusGoalsFirebase(
@@ -456,10 +581,12 @@ export const useUserStore = create<UserState>()(
                 break;
                 
               case 'recordFocusSession':
+                console.log("💾 UserStore: Recording focus session to Firebase", update.session);
                 await recordFocusSessionFirebase(
                   update.uid, 
                   update.session
                 );
+                console.log("✅ UserStore: Focus session recorded in Firebase");
                 break;
                 
               case 'updateSettings':

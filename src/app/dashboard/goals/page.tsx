@@ -17,6 +17,8 @@ import { ACHIEVEMENTS, Achievement } from '@/lib/firebase/achievements';
 import { refreshGoals, assignRandomCompanionGoal, updateGoal as updateGoalFirebase, removeGoal as removeGoalFirebase } from '@/lib/firebase/goals';
 import { getCharacterDotColor, getCharacterColors } from '@/components/Common/CharacterColor/CharacterColor';
 import { GoalForm, GoalSection, isSystemGoal, isUserCreatedGoal, getTomorrowDateString } from '@/components/Goals';
+import AchievementNotification from '@/components/Common/Notifications/AchievementNotification';
+import GoalNotification from '@/components/Common/Notifications/GoalNotification';
 
 export default function GoalsPage() {
   const { user, isLoading } = useAuthStore();
@@ -47,6 +49,9 @@ export default function GoalsPage() {
     type: 'daily' | 'weekly' | 'challenge' | 'custom';
     title: string;
   } | null>(null);
+  
+  // Add state for achievement notifications
+  const [showAchievement, setShowAchievement] = useState<Achievement | null>(null);
   
   // Load goal achievements if not already loaded
   useEffect(() => {
@@ -340,7 +345,60 @@ export default function GoalsPage() {
   
   const handleCompleteGoal = (goalId: string) => {
     if (!user) return;
+    
+    // Find the goal to display in notification
+    const goal = userData?.goals?.list.find(g => g.id === goalId);
+    if (goal) {
+      // Show goal completion notification
+      setGoalNotification({
+        type: goal.type as 'daily' | 'weekly' | 'challenge' | 'custom',
+        title: goal.title
+      });
+    }
+    
+    // Mark goal as complete in store
     markComplete(user.uid, goalId);
+    
+    // Check for achievements
+    if (userData?.goals?.list) {
+      const completedGoals = [...userData.goals.list.filter(g => g.completed), goal].filter(Boolean) as Goal[];
+      const challengeGoals = completedGoals.filter(g => g.type === 'challenge');
+      
+      // Check if this completion unlocks any achievements
+      const totalCompleted = completedGoals.length;
+      
+      // Check specific achievement thresholds
+      if (totalCompleted === 1) {
+        // First goal completed
+        const firstGoalAchievement = achievements.find(a => a.id === 'your_first_goal');
+        if (firstGoalAchievement) {
+          setShowAchievement(firstGoalAchievement);
+        }
+      } else if (totalCompleted >= ACHIEVEMENTS.goals.achiever.requirement.value) {
+        // Achiever (10 goals)
+        const achieverAchievement = achievements.find(a => a.id === 'achiever');
+        if (achieverAchievement && !achieverAchievement.unlockedAt) {
+          setShowAchievement(achieverAchievement);
+        }
+      } else if (totalCompleted >= ACHIEVEMENTS.goals.overachiever.requirement.value) {
+        // Overachiever (25 goals)
+        const overachieverAchievement = achievements.find(a => a.id === 'overachiever');
+        if (overachieverAchievement && !overachieverAchievement.unlockedAt) {
+          setShowAchievement(overachieverAchievement);
+        }
+      }
+      
+      // Check for challenge goals
+      if (goal?.type === 'challenge') {
+        const challengeCount = challengeGoals.length;
+        if (challengeCount >= ACHIEVEMENTS.goals.challenge_master.requirement.value) {
+          const challengeMasterAchievement = achievements.find(a => a.id === 'challenge_master');
+          if (challengeMasterAchievement && !challengeMasterAchievement.unlockedAt) {
+            setShowAchievement(challengeMasterAchievement);
+          }
+        }
+      }
+    }
   };
   
   return (
@@ -510,6 +568,34 @@ export default function GoalsPage() {
             onComplete={() => {}}
             onDelete={handleDeleteGoal}
             isExpired={true}
+          />
+        )}
+        
+        {/* Show goal notification */}
+        {goalNotification && (
+          <GoalNotification
+            goal={{
+              id: '',
+              title: goalNotification.title,
+              description: '',
+              targetMinutes: 0,
+              currentMinutes: 0,
+              deadline: Timestamp.now(),
+              createdAt: Timestamp.now(),
+              completed: true,
+              type: goalNotification.type
+            }}
+            action="completed"
+            companionId={userData?.settings?.selectedCompanion || 'sayori'}
+            onClose={() => setGoalNotification(null)}
+          />
+        )}
+        
+        {/* Show achievement notification */}
+        {showAchievement && (
+          <AchievementNotification
+            achievement={showAchievement}
+            onClose={() => setShowAchievement(null)}
           />
         )}
       </main>

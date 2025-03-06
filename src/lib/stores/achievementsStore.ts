@@ -67,6 +67,7 @@ interface AchievementsState {
   isLoading: boolean;
   error: string | null;
   lastSyncTime: number | null;
+  recentlyUnlockedAchievement: Achievement | null;
   
   // Actions
   setAchievements: (achievements: Achievement[]) => void;
@@ -93,6 +94,7 @@ interface AchievementsState {
   unlockAchievement: (uid: string, achievementId: string) => void;
   applyReward: (uid: string, achievementId: string) => void;
   syncWithFirebase: (uid: string, force?: boolean) => Promise<void>;
+  clearRecentlyUnlockedAchievement: () => void;
 }
 
 export const useAchievementsStore = create<AchievementsState>()(
@@ -104,13 +106,17 @@ export const useAchievementsStore = create<AchievementsState>()(
       isLoading: false,
       error: null,
       lastSyncTime: null,
+      recentlyUnlockedAchievement: null,
       
       setAchievements: (achievements) => set({ achievements }),
       
       setUnlockedAchievements: (achievementIds) => set({ unlockedAchievements: achievementIds }),
       
       checkFocus: (uid, totalMinutes, sessionMinutes, totalSessions) => {
-        set((state) => ({
+        console.log(`🏆 AchievementsStore: Checking focus achievements - Total: ${totalMinutes} min, Session: ${sessionMinutes} min, Sessions: ${totalSessions}`);
+        
+        // Add to pending updates
+        set(state => ({
           pendingUpdates: [
             ...state.pendingUpdates,
             {
@@ -125,6 +131,9 @@ export const useAchievementsStore = create<AchievementsState>()(
             }
           ]
         }));
+        
+        // Sync with Firebase
+        get().syncWithFirebase(uid);
       },
       
       checkStreak: (uid, currentStreak) => {
@@ -212,7 +221,10 @@ export const useAchievementsStore = create<AchievementsState>()(
       },
       
       checkSession: (uid, sessionSeconds, sessionStartTime) => {
-        set((state) => ({
+        console.log(`🏆 AchievementsStore: Checking session achievements - Duration: ${sessionSeconds} sec, Start: ${sessionStartTime}`);
+        
+        // Add to pending updates
+        set(state => ({
           pendingUpdates: [
             ...state.pendingUpdates,
             {
@@ -220,33 +232,46 @@ export const useAchievementsStore = create<AchievementsState>()(
               uid,
               checkType: 'session',
               data: {
-                sessionMinutes: sessionSeconds / 60,
+                sessionMinutes: Math.floor(sessionSeconds / 60),
                 sessionStartTime
               }
             }
           ]
         }));
+        
+        // Sync with Firebase
+        get().syncWithFirebase(uid);
       },
       
       unlockAchievement: (uid, achievementId) => {
-        // Update local state to show achievement as unlocked
-        set((state) => {
-          if (state.unlockedAchievements.includes(achievementId)) {
-            return state; // Already unlocked
-          }
-          
-          return {
-            unlockedAchievements: [...state.unlockedAchievements, achievementId],
-            pendingUpdates: [
-              ...state.pendingUpdates,
-              {
-                type: 'unlockAchievement',
-                uid,
-                achievementId
-              }
-            ]
-          };
-        });
+        // Check if achievement is already unlocked
+        const { unlockedAchievements, achievements } = get();
+        if (unlockedAchievements.includes(achievementId)) {
+          return;
+        }
+        
+        // Find the achievement to show it in UI
+        const achievementToUnlock = achievements.find(a => a.id === achievementId);
+        if (achievementToUnlock) {
+          console.log(`🏆 AchievementsStore: Unlocked achievement "${achievementToUnlock.title}"`);
+          set({ recentlyUnlockedAchievement: achievementToUnlock });
+        }
+        
+        // Add to pending updates
+        set(state => ({
+          pendingUpdates: [
+            ...state.pendingUpdates,
+            {
+              type: 'unlockAchievement',
+              uid,
+              achievementId
+            }
+          ],
+          unlockedAchievements: [...state.unlockedAchievements, achievementId]
+        }));
+        
+        // Sync with Firebase
+        get().syncWithFirebase(uid);
       },
       
       applyReward: (uid, achievementId) => {
@@ -356,9 +381,10 @@ export const useAchievementsStore = create<AchievementsState>()(
                   case 'session':
                     if (update.data.sessionMinutes !== undefined && 
                         update.data.sessionStartTime !== undefined) {
+                      console.log(`🏆 AchievementsStore: Processing session achievement check - Using ${update.data.sessionMinutes} minutes`);
                       await checkSessionAchievements(
                         update.uid,
-                        update.data.sessionMinutes * 60, // Convert back to seconds
+                        update.data.sessionMinutes, // Use minutes directly - don't convert back to seconds
                         update.data.sessionStartTime
                       );
                     }
@@ -394,6 +420,10 @@ export const useAchievementsStore = create<AchievementsState>()(
             error: error instanceof Error ? error.message : 'Unknown error during sync'
           });
         }
+      },
+      
+      clearRecentlyUnlockedAchievement: () => {
+        set({ recentlyUnlockedAchievement: null });
       }
     }),
     {

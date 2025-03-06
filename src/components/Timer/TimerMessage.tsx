@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { TimerMessageProps } from './types';
 import DialogueNotification from '@/components/Common/Notifications/DialogueNotification';
 import { 
@@ -17,29 +17,35 @@ const TimerMessage: React.FC<TimerMessageProps> = ({
   onClose
 }) => {
   const [dialogueMessage, setDialogueMessage] = useState<string>('');
+  const prevTimerStateRef = useRef<string | null>(null);
   
   useEffect(() => {
     // If there's already a specific message passed, use that instead
     if (message) {
-      console.log("Using provided message:", message);
       setDialogueMessage(message);
       return;
     }
     
-    // Otherwise, generate a message based on timer state
-    let generatedMessage = '';
-    
-    try {
-      // Log parameters for debugging
-      console.log("Generating dialogue for:", {
-        timerState,
+    // Only log when timer state changes
+    const timerStateChanged = prevTimerStateRef.current !== timerState;
+    if (timerStateChanged && process.env.NODE_ENV === 'development') {
+      console.log("Timer state changed to:", timerState);
+      console.log("Dialogue parameters:", {
         companionId,
         mood,
         affinity,
         sessionDuration,
         consecutiveDays
       });
-      
+    }
+    
+    // Update the previous timer state
+    prevTimerStateRef.current = timerState;
+    
+    // Otherwise, generate a message based on timer state
+    let generatedMessage = '';
+    
+    try {
       switch (timerState) {
         case 'idle':
           generatedMessage = getCompanionDialogue(
@@ -54,7 +60,9 @@ const TimerMessage: React.FC<TimerMessageProps> = ({
           if (generatedMessage.includes("[Default")) {
             generatedMessage = "Ready to start focusing? I'm here to help you stay on track!";
           }
-          console.log("Idle message:", generatedMessage);
+          if (timerStateChanged && process.env.NODE_ENV === 'development') {
+            console.log("Idle message:", generatedMessage);
+          }
           break;
         
         case 'running':
@@ -70,7 +78,9 @@ const TimerMessage: React.FC<TimerMessageProps> = ({
           if (generatedMessage.includes("[Default")) {
             generatedMessage = "You're doing great! Keep focusing, I believe in you!";
           }
-          console.log("Running message:", generatedMessage);
+          if (timerStateChanged && process.env.NODE_ENV === 'development') {
+            console.log("Running message:", generatedMessage);
+          }
           break;
         
         case 'paused':
@@ -82,7 +92,9 @@ const TimerMessage: React.FC<TimerMessageProps> = ({
             undefined, 
             'encouragement'
           );
-          console.log("Paused message:", generatedMessage);
+          if (timerStateChanged && process.env.NODE_ENV === 'development') {
+            console.log("Paused message:", generatedMessage);
+          }
           break;
           
         case 'completed':
@@ -97,7 +109,9 @@ const TimerMessage: React.FC<TimerMessageProps> = ({
               totalSessions: 1 
             }
           );
-          console.log("Completed message:", generatedMessage);
+          if (timerStateChanged && process.env.NODE_ENV === 'development') {
+            console.log("Completed message:", generatedMessage);
+          }
           break;
         
         case 'break':
@@ -109,7 +123,9 @@ const TimerMessage: React.FC<TimerMessageProps> = ({
             { isBreakTime: true }, 
             'session.break'
           );
-          console.log("Break message:", generatedMessage);
+          if (timerStateChanged && process.env.NODE_ENV === 'development') {
+            console.log("Break message:", generatedMessage);
+          }
           break;
       }
     } catch (error) {

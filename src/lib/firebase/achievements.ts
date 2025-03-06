@@ -672,14 +672,14 @@ export const checkAllAchievements = async (uid: string, stats: AchievementStats)
 // Add a new check for uninterrupted sessions in TimerProvider
 export const checkSessionAchievements = async (
   uid: string, 
-  sessionSeconds: number,
+  sessionMinutes: number,
   sessionStartTime: Date
 ) => {
-  const sessionMinutes = Math.floor(sessionSeconds / 60);
+  console.log(`🏆 Checking session achievements with ${sessionMinutes} minutes at ${sessionStartTime}`);
   
-  // Check focus achievements for this specific session
+  // Check focus achievements for this specific session - pass minutes directly
   await checkFocusAchievements(uid, 0, sessionMinutes, 0);
   
-  // Check time-based achievements
+  // Check time-based achievements - pass minutes directly
   await checkTimeBasedAchievements(uid, sessionStartTime, sessionMinutes);
 };

@@ -382,10 +382,14 @@ export const recordFocusSession = async (
   uid: string,
   session: Omit<FocusSession, 'id'>
 ): Promise<void> => {
+  console.log("💾 Firebase: Recording focus session", session);
   const userRef = doc(db, 'users', uid);
   const userSnap = await getDoc(userRef);
   
-  if (!userSnap.exists()) return;
+  if (!userSnap.exists()) {
+    console.error("❌ Firebase: User document not found");
+    return;
+  }
   
   const userData = userSnap.data() as UserDocument;
   const now = new Date();
@@ -395,6 +399,7 @@ export const recordFocusSession = async (
   
   // Check if this is a new day
   const isNewDay = today.getTime() !== lastSessionDay.getTime();
+  console.log(`📆 Firebase: Checking day status - Today: ${today.toISOString().split('T')[0]}, Last Session: ${lastSessionDay.toISOString().split('T')[0]}, Is New Day: ${isNewDay}`);
   
   // Calculate daily streak
   let dailyStreak = userData.focusStats.dailyStreak;
@@ -406,14 +411,17 @@ export const recordFocusSession = async (
     
     if (lastSessionDay.getTime() === yesterdayDate.getTime()) {
       dailyStreak += 1;
+      console.log(`🎯 Firebase: Incremented daily streak to ${dailyStreak}`);
     } else {
       // If there was a gap, reset streak
       dailyStreak = 1;
+      console.log(`🎯 Firebase: Reset daily streak to 1 (gap in days)`);
     }
   }
   
   // Reset today's focus time if it's a new day
   const todaysFocusTime = isNewDay ? session.duration : userData.focusStats.todaysFocusTime + session.duration;
+  console.log(`⏱️ Firebase: Today's focus time - Old: ${userData.focusStats.todaysFocusTime}s, Updated: ${todaysFocusTime}s`);
   
   // Calculate weekly focus time
   const startOfWeek = new Date(today);
@@ -426,14 +434,18 @@ export const recordFocusSession = async (
   // Reset weekly focus time if it's a new week
   if (startOfWeek.getTime() !== lastSessionWeek.getTime()) {
     weeklyFocusTime = session.duration;
+    console.log(`📅 Firebase: Reset weekly focus time (new week)`);
   } else {
     weeklyFocusTime += session.duration;
+    console.log(`📅 Firebase: Updated weekly focus time to ${weeklyFocusTime}s`);
   }
   
   // Calculate average session duration
   const totalSessions = userData.focusStats.totalSessions + 1;
   const totalFocusTime = userData.focusStats.totalFocusTime + session.duration;
   const averageSessionDuration = Math.round(totalFocusTime / totalSessions);
+  
+  console.log(`📊 Firebase: Updated stats - Total Time: ${totalFocusTime}s, Total Sessions: ${totalSessions}, Avg Duration: ${averageSessionDuration}s`);
   
   // Calculate task completion rate
   const completedSessions = session.completed 
@@ -450,25 +462,36 @@ export const recordFocusSession = async (
   // Keep only the 10 most recent sessions
   const recentSessions = [newSession, ...userData.recentSessions].slice(0, 10);
   
+  console.log("💾 Firebase: Updating user document with new stats and session data");
   // Update user stats
-  await updateDoc(userRef, {
-    'focusStats.totalFocusTime': totalFocusTime,
-    'focusStats.todaysFocusTime': todaysFocusTime,
-    'focusStats.weeklyFocusTime': weeklyFocusTime,
-    'focusStats.totalSessions': totalSessions,
-    'focusStats.completedSessions': completedSessions,
-    'focusStats.taskCompletionRate': taskCompletionRate,
-    'focusStats.lastSessionDate': session.endTime,
-    'focusStats.dailyStreak': dailyStreak,
-    'focusStats.longestStreak': Math.max(dailyStreak, userData.focusStats.longestStreak),
-    'focusStats.totalBreaks': increment(session.breaks.count),
-    'focusStats.averageSessionDuration': averageSessionDuration,
-    'recentSessions': recentSessions,
-    [`companions.${session.companionId}.stats.sessionsCompleted`]: increment(session.completed ? 1 : 0),
-  });
+  try {
+    await updateDoc(userRef, {
+      'focusStats.totalFocusTime': totalFocusTime,
+      'focusStats.todaysFocusTime': todaysFocusTime,
+      'focusStats.weeklyFocusTime': weeklyFocusTime,
+      'focusStats.totalSessions': totalSessions,
+      'focusStats.completedSessions': completedSessions,
+      'focusStats.taskCompletionRate': taskCompletionRate,
+      'focusStats.lastSessionDate': session.endTime,
+      'focusStats.dailyStreak': dailyStreak,
+      'focusStats.longestStreak': Math.max(dailyStreak, userData.focusStats.longestStreak),
+      'focusStats.totalBreaks': increment(session.breaks.count),
+      'focusStats.averageSessionDuration': averageSessionDuration,
+      'recentSessions': recentSessions,
+      [`companions.${session.companionId}.stats.sessionsCompleted`]: increment(session.completed ? 1 : 0),
+    });
+    console.log("✅ Firebase: Successfully updated user document with session data");
+  } catch (error) {
+    console.error("❌ Firebase: Error updating user document:", error);
+  }
   
   // Update companion stats
-  await updateCompanionStats(uid, session.companionId, session.duration);
+  try {
+    await updateCompanionStats(uid, session.companionId, session.duration);
+    console.log(`✅ Firebase: Successfully updated companion stats for ${session.companionId}`);
+  } catch (error) {
+    console.error("❌ Firebase: Error updating companion stats:", error);
+  }
 };
 
 /**
