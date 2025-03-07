@@ -608,21 +608,37 @@ export const checkGoalAchievements = async (
   completedGoals: Goal[],
   challengeGoals: Goal[]
 ): Promise<void> => {
-  if (completedGoals.length >= 1) {
-    await unlockAchievement(uid, 'your_first_goal');
-  }
+  // First check if the user document already has achieved these
+  const userRef = doc(db, 'users', uid);
+  const userDoc = await getDoc(userRef);
   
-  if (completedGoals.length >= ACHIEVEMENTS.goals.achiever.requirement.value) {
-    await unlockAchievement(uid, 'achiever');
-  }
-  
-  if (completedGoals.length >= ACHIEVEMENTS.goals.overachiever.requirement.value) {
-    await unlockAchievement(uid, 'overachiever');
-  }
-  
-  // Check for challenge master achievement
-  if (challengeGoals.length >= ACHIEVEMENTS.goals.challenge_master.requirement.value) {
-    await unlockAchievement(uid, 'challenge_master');
+  if (userDoc.exists()) {
+    const userData = userDoc.data();
+    const existingAchievements = userData.achievements || [];
+    
+    // Only check for the first goal achievement if not already unlocked
+    const firstGoalUnlocked = existingAchievements.some((a: { id: string }) => a.id === 'your_first_goal');
+    if (!firstGoalUnlocked && completedGoals.length >= 1) {
+      await unlockAchievement(uid, 'your_first_goal');
+    } else if (firstGoalUnlocked) {
+      // If already unlocked in the past, but we don't have completed goals now,
+      // re-unlock to make sure it stays unlocked (this shouldn't add duplicates)
+      await unlockAchievement(uid, 'your_first_goal');
+    }
+    
+    // For other achievements, we still check the current state
+    if (completedGoals.length >= ACHIEVEMENTS.goals.achiever.requirement.value) {
+      await unlockAchievement(uid, 'achiever');
+    }
+    
+    if (completedGoals.length >= ACHIEVEMENTS.goals.overachiever.requirement.value) {
+      await unlockAchievement(uid, 'overachiever');
+    }
+    
+    // Check for challenge master achievement
+    if (challengeGoals.length >= ACHIEVEMENTS.goals.challenge_master.requirement.value) {
+      await unlockAchievement(uid, 'challenge_master');
+    }
   }
 };
 

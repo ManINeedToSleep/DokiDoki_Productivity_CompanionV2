@@ -267,6 +267,9 @@ export const refreshGoals = async (uid: string): Promise<void> => {
   let needNewChallengeGoal = true;
   const companionId = userData.settings?.selectedCompanion || 'sayori';
   
+  // Keep track of completed goals count before filtering
+  const completedGoalsCount = goalsList.filter(goal => goal.completed).length;
+  
   // Filter out expired goals and reset daily/weekly goals
   const updatedGoals = goalsList.filter(goal => {
     // Keep completed goals
@@ -400,6 +403,21 @@ export const refreshGoals = async (uid: string): Promise<void> => {
       
       updatedGoals.push(newGoal);
     }
+  }
+
+  // After refreshing goals, check if we should persist goal-related achievements
+  // This ensures achievements like "Goal Setter" stay unlocked even if all completed goals are removed
+  if (completedGoalsCount > 0) {
+    // Create a minimal update to check goal achievements
+    // This will trigger checkGoalAchievements which now has protection against achievement loss
+    await checkAllAchievements(uid, {
+      completedGoals: completedGoalsCount,
+      totalFocusTime: userData.focusStats?.totalFocusTime || 0,
+      weekStreak: userData.focusStats?.weekStreak || 0,
+      longestStreak: userData.focusStats?.longestStreak || 0,
+      totalSessions: userData.focusStats?.totalSessions || 0,
+      challengeGoalsCompleted: goalsList.filter(g => g.completed && g.type === 'challenge').length || 0
+    });
   }
 
   await updateDoc(userRef, {
