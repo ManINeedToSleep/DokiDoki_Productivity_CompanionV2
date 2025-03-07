@@ -267,6 +267,9 @@ export const refreshGoals = async (uid: string): Promise<void> => {
   let needNewChallengeGoal = true;
   const companionId = userData.settings?.selectedCompanion || 'sayori';
   
+  // Count expired goals to calculate task completion rate accurately
+  let expiredGoalsCount = 0;
+  
   // Filter out expired goals and reset daily/weekly goals
   const updatedGoals = goalsList.filter(goal => {
     // Keep completed goals
@@ -274,22 +277,25 @@ export const refreshGoals = async (uid: string): Promise<void> => {
     
     // Check if goal has expired
     if (goal.deadline.toDate() < now.toDate()) {
+      console.log(`🎯 Firebase: Goal expired: "${goal.title}"`);
+      expiredGoalsCount++;
       // Don't keep expired goals
       return false;
     }
     
-    // If we have an active goal of each type, mark that we don't need a new one
-    if (goal.type === 'daily' && !goal.completed) {
+    // Check goal type for generating new goals
+    if (goal.type === 'daily') {
       needNewDailyGoal = false;
-    } else if (goal.type === 'weekly' && !goal.completed) {
+    } else if (goal.type === 'weekly') {
       needNewWeeklyGoal = false;
-    } else if (goal.type === 'challenge' && goal.companionId === companionId && !goal.completed) {
-      needNewCompanionGoal = false;
-    } else if (goal.type === 'challenge' && !goal.companionId && !goal.completed) {
-      needNewChallengeGoal = false;
+    } else if (goal.type === 'challenge') {
+      if (goal.companionId) {
+        needNewCompanionGoal = false;
+      } else {
+        needNewChallengeGoal = false;
+      }
     }
     
-    // Keep this active goal
     return true;
   });
 
@@ -402,9 +408,22 @@ export const refreshGoals = async (uid: string): Promise<void> => {
     }
   }
 
+  // Calculate the task completion rate 
+  // (number of completed goals divided by total completed + expired goals)
+  const completedGoals = userData.goals?.completedGoals || 0;
+  const failedGoals = expiredGoalsCount;
+  const totalGoalsAttempted = completedGoals + failedGoals;
+  const taskCompletionRate = totalGoalsAttempted > 0 
+    ? Math.round((completedGoals / totalGoalsAttempted) * 100) 
+    : 100; // Default to 100% if no attempts
+  
+  console.log(`🎯 Firebase: Task completion rate - Completed: ${completedGoals}, Failed: ${failedGoals}, Rate: ${taskCompletionRate}%`);
+  
+  // Update goals list and task completion rate
   await updateDoc(userRef, {
     'goals.list': updatedGoals,
-    'goals.lastUpdated': now
+    'goals.lastUpdated': now,
+    'focusStats.taskCompletionRate': taskCompletionRate
   });
 };
 

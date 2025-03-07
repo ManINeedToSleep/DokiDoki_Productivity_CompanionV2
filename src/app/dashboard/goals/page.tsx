@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { getUserDocument } from '@/lib/firebase/user';
 import { UserDocument } from '@/lib/firebase/user';
-import Navbar from '@/components/Common/Navbar/Navbar';
+
 import { motion } from 'framer-motion';
 import { Goal, createGoal } from '@/lib/firebase/goals';
 import Button from '@/components/Common/Button/Button';
@@ -32,7 +32,8 @@ export default function GoalsPage() {
   const { 
     markComplete, 
     syncWithFirebase,
-    ensureDefaultGoals
+    refreshAllGoals,
+    addGoal
   } = useGoalsStore();
   
   // Get achievements store
@@ -53,6 +54,9 @@ export default function GoalsPage() {
   
   // Add state for achievement notifications
   const [showAchievement, setShowAchievement] = useState<Achievement | null>(null);
+  
+  // First, add a state for the collapsible Completed Goals section
+  const [completedGoalsCollapsed, setCompletedGoalsCollapsed] = useState(false);
   
   // Load goal achievements if not already loaded
   useEffect(() => {
@@ -110,22 +114,45 @@ export default function GoalsPage() {
     }
   }, [user, setUserData, setIsRefreshing]);
   
-  // Move fetchUserData outside of useEffect
+  // Move fetchUserData useCallback to the top level
   const fetchUserData = useCallback(async () => {
     if (!user) return;
     
+    // Move setupDefaultGoals inside the useCallback
+    const setupDefaultGoals = async (userId: string): Promise<boolean> => {
+      try {
+        console.log('Setting up default goals for user:', userId);
+        // First refresh all goals to clear any expired ones
+        await refreshAllGoals(userId);
+        
+        // Add a default "Get Started" goal
+        await addGoal(userId, {
+          title: "Complete Your First Focus Session",
+          description: "Try the timer feature to complete a focus session",
+          targetMinutes: 25,
+          deadline: Timestamp.fromDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)), // 7 days from now
+          type: 'custom'
+        });
+        
+        console.log('Default goals created successfully');
+        return true;
+      } catch (error) {
+        console.error('Error creating default goals:', error);
+        return false;
+      }
+    };
+    
+    setIsLoadingData(true);
     try {
-      setIsLoadingData(true);
       const data = await getUserDocument(user.uid);
       setUserData(data);
       
       // Check if user has goals and create default ones if needed
-      const companionId = data?.settings?.selectedCompanion || 'sayori';
       const hasGoals = data?.goals?.list && data.goals.list.length > 0;
       
       if (!hasGoals) {
         console.log('No goals found for user, ensuring default goals...');
-        const created = await ensureDefaultGoals(user.uid, companionId);
+        const created = await setupDefaultGoals(user.uid);
         if (created) {
           console.log('Default goals created successfully');
           // Fetch updated user data after creating goals
@@ -138,34 +165,21 @@ export default function GoalsPage() {
     } finally {
       setIsLoadingData(false);
     }
-  }, [user, ensureDefaultGoals]);
-
-  useEffect(() => {
-    if (!user) {
-      router.push('/auth');
-      return;
-    }
-    
-    // Call fetchUserData
-    fetchUserData();
-    
-    // Sync goals with Firebase
-    syncWithFirebase(user.uid);
-    
-    // Sync achievements with Firebase
-    syncAchievements(user.uid);
-  }, [user, router, syncWithFirebase, syncAchievements, fetchUserData]);
+  }, [user, refreshAllGoals, addGoal, setUserData]);
   
-  // Sync with Firebase every 3 minutes
+  // Move useEffect to the top level
   useEffect(() => {
+    // This will run on component mount
     if (user) {
-      const interval = setInterval(() => {
-        syncWithFirebase(user.uid);
-      }, 3 * 60 * 1000);
-      
-      return () => clearInterval(interval);
+      fetchUserData();
+      // Sync goals with Firebase
+      syncWithFirebase(user.uid);
+      // Sync achievements with Firebase
+      syncAchievements(user.uid);
+    } else if (!isLoading) {
+      router.push('/auth');
     }
-  }, [user, syncWithFirebase]);
+  }, [user, isLoading, router, syncWithFirebase, syncAchievements, fetchUserData]);
   
   // Check for new goals on component mount
   useEffect(() => {
@@ -420,7 +434,6 @@ export default function GoalsPage() {
   return (
     <div className="min-h-screen">
       <PolkaDotBackground dotColor={dotColor} />
-      <Navbar />
       
       <main className="container mx-auto px-4 py-6 max-h-[calc(100vh-64px)] overflow-y-auto scrollbar-hide">
         <motion.h1 
@@ -565,13 +578,32 @@ export default function GoalsPage() {
         
         {/* Completed Goals */}
         {completedGoals.length > 0 && (
-          <GoalSection
-            title="Completed Goals"
-            goals={completedGoals}
-            emptyMessage="No completed goals yet."
-            colors={colors}
-            onComplete={() => {}}
-          />
+          <div className="mb-6">
+            <div 
+              className="flex justify-between items-center cursor-pointer mb-2" 
+              onClick={() => setCompletedGoalsCollapsed(!completedGoalsCollapsed)}
+            >
+              <h3 
+                className="text-lg font-[Riffic]"
+                style={{ color: colors.heading }}
+              >
+                Completed Goals
+              </h3>
+              <div className="text-gray-500">
+                {completedGoalsCollapsed ? '▼ Show' : '▲ Hide'} ({completedGoals.length})
+              </div>
+            </div>
+            
+            {!completedGoalsCollapsed && (
+              <GoalSection
+                title=""
+                goals={completedGoals}
+                emptyMessage="No completed goals yet."
+                colors={colors}
+                onComplete={() => {}}
+              />
+            )}
+          </div>
         )}
         
         {/* Expired Goals */}

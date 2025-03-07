@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { getUserDocument } from '@/lib/firebase/user';
 import { UserDocument } from '@/lib/firebase/user';
-import Navbar from '@/components/Common/Navbar/Navbar';
 import QuickStats from '@/components/Dashboard/QuickStats';
 import Goals from '@/components/Dashboard/Goals';
 import CharacterProgression from '@/components/Dashboard/CharacterProgression';
@@ -61,7 +60,6 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen">
       <PolkaDotBackground dotColor={dotColor} />
-      <Navbar />
       
       <main className="container mx-auto px-4 py-6">
         <motion.h1 
@@ -77,7 +75,7 @@ export default function Dashboard() {
         >
         </motion.h1>
         
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:min-h-[calc(100vh-200px)]">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="md:col-span-2 space-y-6">
             <QuickStats userData={userData} />
             <Goals userData={userData} />

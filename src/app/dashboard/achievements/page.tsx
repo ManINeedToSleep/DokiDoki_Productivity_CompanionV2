@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { getUserDocument } from '@/lib/firebase/user';
 import { UserDocument } from '@/lib/firebase/user';
-import Navbar from '@/components/Common/Navbar/Navbar';
+
 import { motion } from 'framer-motion';
 import { Achievement } from '@/lib/firebase/achievements';
 import { useAchievementsStore } from '@/lib/stores/achievementsStore';
@@ -34,12 +34,17 @@ export default function AchievementsPage() {
   // Get achievements store
   const { 
     achievements, 
-    unlockedAchievements,
     syncWithFirebase,
     setAchievements,
-    resetStore,
+    clearStore,
     checkAll
   } = useAchievementsStore();
+  
+  // Add this function to replace resetStore
+  const resetAchievementsStore = useCallback(() => {
+    console.log('Resetting achievements store');
+    setAchievements([]);
+  }, [setAchievements]);
   
   // Force refresh function to ensure all achievements are loaded
   const forceRefresh = async () => {
@@ -91,7 +96,7 @@ export default function AchievementsPage() {
     if (achievements.length < 10 || !hasAllTypes) {
       // We're missing some achievement types, reset the store
       console.log('Missing achievement types, resetting store');
-      resetStore();
+      resetAchievementsStore();
       
       // Convert the ACHIEVEMENTS object to an array
       const achievementsArray: Achievement[] = [];
@@ -126,7 +131,19 @@ export default function AchievementsPage() {
         console.error('Failed to load achievements from ACHIEVEMENTS object');
       }
     }
-  }, [achievements, resetStore, setAchievements]);
+  }, [achievements, resetAchievementsStore, setAchievements]);
+  
+  // First ensure fresh data for this user
+  useEffect(() => {
+    if (user) {
+      // Clear the store when the component mounts to ensure fresh data for this user
+      console.log('🔍 Clearing achievement store to ensure fresh data for current user');
+      clearStore();
+      
+      // Then load fresh data from Firebase
+      syncWithFirebase(user.uid, true);
+    }
+  }, [user, clearStore, syncWithFirebase]);
   
   useEffect(() => {
     if (!isLoading && !user) {
@@ -165,18 +182,18 @@ export default function AchievementsPage() {
     }
   }, [user, isLoading, router, checkAll, syncWithFirebase]);
   
-  // Process achievements data
+  // After userData is loaded, update the displayAchievements
   useEffect(() => {
-    if (achievements && unlockedAchievements) {
-      const processed = processAchievements(
-        achievements,
-        unlockedAchievements,
-        userData?.achievements
-      );
+    if (userData) {
+      // Get the user's actual unlocked achievements from userData
+      const userUnlocked = userData.achievements?.map(a => a.id) || [];
+      console.log(`🏆 User has ${userUnlocked.length} unlocked achievements:`, userUnlocked);
       
+      // Process all achievements (from definition) with the user's actual unlocked status
+      const processed = processAchievements(achievements, userUnlocked);
       setDisplayAchievements(processed);
     }
-  }, [achievements, unlockedAchievements, userData]);
+  }, [userData, achievements]);
   
   if (isLoading || isLoadingData) {
     return (
@@ -215,7 +232,6 @@ export default function AchievementsPage() {
   return (
     <div className="min-h-screen">
       <PolkaDotBackground dotColor={dotColor} />
-      <Navbar />
       
       <main className="container mx-auto px-4 py-6">
         <div className="flex justify-between items-center mb-6">

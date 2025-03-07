@@ -3,7 +3,7 @@
 import { motion } from 'framer-motion';
 import { FaClock, FaFire, FaCheckCircle } from 'react-icons/fa';
 import { UserDocument } from '@/lib/firebase/user';
-import { CompanionId } from '@/lib/firebase/companion';
+import { getCharacterColors } from '@/components/Common/CharacterColor/CharacterColor';
 
 interface QuickStatsProps {
   userData: UserDocument | null;
@@ -27,46 +27,6 @@ export default function QuickStats({ userData }: QuickStatsProps) {
   };
   
   // Get character-specific colors
-  const getCharacterColors = (id: CompanionId) => {
-    switch (id) {
-      case 'sayori':
-        return { 
-          primary: '#FF9ED2',
-          secondary: '#FFEEF3',
-          text: '#D76C95',
-          heading: '#FF9ED2'
-        };
-      case 'natsuki':
-        return { 
-          primary: '#FF8DA1',
-          secondary: '#FFF0F0',
-          text: '#D14D61',
-          heading: '#FF8DA1'
-        };
-      case 'yuri':
-        return { 
-          primary: '#A49EFF',
-          secondary: '#F0F0FF',
-          text: '#6A61E0',
-          heading: '#A49EFF'
-        };
-      case 'monika':
-        return { 
-          primary: '#85CD9E',
-          secondary: '#F0FFF5',
-          text: '#4A9B68',
-          heading: '#85CD9E'
-        };
-      default:
-        return { 
-          primary: '#FF9ED2',
-          secondary: '#FFEEF3',
-          text: '#D76C95',
-          heading: '#FF9ED2'
-        };
-    }
-  };
-  
   const colors = getCharacterColors(selectedCompanion);
   
   const stats = [
@@ -80,8 +40,8 @@ export default function QuickStats({ userData }: QuickStatsProps) {
              'bg-green-100'
     },
     {
-      label: "Weekly Streak",
-      value: `${focusStats.weekStreak} days`,
+      label: "Daily Streak",
+      value: `${focusStats.dailyStreak} days`,
       icon: <FaFire className="text-orange-500" size={20} />,
       color: 'bg-orange-100'
     },

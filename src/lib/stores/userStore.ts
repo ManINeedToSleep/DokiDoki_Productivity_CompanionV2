@@ -18,6 +18,8 @@ import {
   getUserDocument
 } from '@/lib/firebase/user';
 import { CompanionId } from '@/lib/firebase/companion';
+import { doc, updateDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 
 // Types for pending updates
 interface PendingFocusGoalsUpdate {
@@ -512,40 +514,7 @@ export const useUserStore = create<UserState>()(
       
       syncWithFirebase: async (uid, force = false) => {
         const state = get();
-        if (!state.user) {
-          console.error("❌ UserStore: No user found in state, cannot sync with Firebase");
-          
-          // Attempt to load user data first, then try syncing again
-          console.log("🔄 UserStore: Attempting to load user data before syncing");
-          try {
-            console.log("🔄 UserStore: Fetching user document from Firebase...");
-            set({ isLoading: true });
-            const userData = await getUserDocument(uid);
-            
-            if (userData) {
-              console.log("✅ UserStore: User data loaded successfully, will attempt sync");
-              set({ 
-                user: userData,
-                isLoading: false
-              });
-              
-              // Now try syncing again with the loaded user
-              console.log("🔄 UserStore: Now attempting to sync with loaded user data");
-              await get().syncWithFirebase(uid, force);
-              return;
-            } else {
-              console.error("❌ UserStore: Failed to load user data, user document not found");
-              set({ isLoading: false });
-              return;
-            }
-          } catch (error) {
-            console.error("❌ UserStore: Error loading user data:", error);
-            set({ isLoading: false });
-            return;
-          }
-        }
-        
-        console.log(`🔄 UserStore: Syncing with Firebase (force=${force}). ${state.pendingUpdates.length} pending updates`);
+        if (!state.user) return;
         
         // Check if we need to sync (if not forced)
         const now = Date.now();
@@ -553,6 +522,69 @@ export const useUserStore = create<UserState>()(
           // Less than 5 minutes since last sync and not forced
           console.log(`🔄 UserStore: Skipping sync, last sync was ${Math.round((now - state.lastSyncTime) / 1000)} seconds ago`);
           return;
+        }
+        
+        // Check if we need to reset today's focus time
+        // This ensures the time resets even if the user comes back after a day without completing a session
+        const lastSessionDate = state.user.focusStats.lastSessionDate;
+        let lastSessionDateTime: Date | null = null;
+        
+        // Handle different types that lastSessionDate might be
+        if (lastSessionDate) {
+          if (typeof lastSessionDate.toDate === 'function') {
+            // It's a Firestore Timestamp
+            lastSessionDateTime = lastSessionDate.toDate();
+          } else if (lastSessionDate instanceof Date) {
+            // It's already a Date object
+            lastSessionDateTime = lastSessionDate;
+          } else if (typeof lastSessionDate === 'number') {
+            // It's a timestamp in milliseconds
+            lastSessionDateTime = new Date(lastSessionDate);
+          } else {
+            // Try to convert from other formats or log the issue
+            console.warn(`⚠️ Unknown lastSessionDate format:`, lastSessionDate);
+            try {
+              // Use toString() to ensure we're passing a string to the Date constructor
+              lastSessionDateTime = new Date(lastSessionDate.toString());
+            } catch (e) {
+              console.error(`❌ Could not convert lastSessionDate to Date:`, e);
+            }
+          }
+        }
+        
+        if (lastSessionDateTime) {
+          const today = new Date();
+          today.setHours(0, 0, 0, 0); // Start of today
+          
+          const lastSessionDay = new Date(lastSessionDateTime);
+          lastSessionDay.setHours(0, 0, 0, 0); // Start of the day of last session
+          
+          // If the last session was on a different day and todaysFocusTime is not zero, reset it
+          if (today.getTime() !== lastSessionDay.getTime() && state.user.focusStats.todaysFocusTime > 0) {
+            console.log(`⏰ UserStore: New day detected, resetting today's focus time from ${state.user.focusStats.todaysFocusTime}s to 0s`);
+            
+            // Update local state
+            set({
+              user: {
+                ...state.user,
+                focusStats: {
+                  ...state.user.focusStats,
+                  todaysFocusTime: 0
+                }
+              }
+            });
+            
+            // Also update in Firebase directly
+            try {
+              const userRef = doc(db, 'users', uid);
+              await updateDoc(userRef, {
+                'focusStats.todaysFocusTime': 0
+              });
+              console.log(`✅ UserStore: Reset today's focus time in Firebase`);
+            } catch (error) {
+              console.error("❌ UserStore: Error resetting today's focus time:", error);
+            }
+          }
         }
         
         // If there are no pending updates, just update the sync time

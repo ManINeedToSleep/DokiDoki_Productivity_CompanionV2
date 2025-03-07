@@ -43,10 +43,11 @@ export default function DebugAchievements() {
 
   // Restore original console.log on unmount
   React.useEffect(() => {
+    // Reset console.log on cleanup
     return () => {
       console.log = originalConsoleLog;
     };
-  }, []);
+  }, [originalConsoleLog]);
 
   if (isLoading) {
     return (

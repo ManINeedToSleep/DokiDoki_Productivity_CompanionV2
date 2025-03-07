@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { getUserDocument } from '@/lib/firebase/user';
 import { UserDocument } from '@/lib/firebase/user';
-import Navbar from '@/components/Common/Navbar/Navbar';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useUserStore } from '@/lib/stores/userStore';
 import { useGoalsStore } from '@/lib/stores/goalsStore';
@@ -53,7 +52,7 @@ export default function TimerPage() {
   const pausedTimeRef = useRef<number>(0);
   
   // Get stores
-  const { recordFocusSession: userRecordFocusSession, updateCompanionMood, updateCompanionStats: userUpdateCompanionStats, updateCompanionAffinity, syncWithFirebase: userSyncWithFirebase, refreshUserData} = useUserStore();
+  const { recordFocusSession: userRecordFocusSession, updateCompanionMood, updateCompanionStats: userUpdateCompanionStats, syncWithFirebase: userSyncWithFirebase, refreshUserData} = useUserStore();
   const { checkFocus, checkSession, syncWithFirebase: syncAchievements } = useAchievementsStore();
   const { updateProgress, syncWithFirebase: syncGoals } = useGoalsStore();
   
@@ -278,7 +277,6 @@ export default function TimerPage() {
         // Update companion stats
         console.log(`🧠 Updating companion stats for: ${selectedCompanion}`);
         userUpdateCompanionStats(user.uid, selectedCompanion, forcedSessionDuration);
-        updateCompanionAffinity(user.uid, selectedCompanion, forcedSessionDuration);
         updateCompanionMood(user.uid, selectedCompanion);
         
         // Check achievements
@@ -429,7 +427,6 @@ export default function TimerPage() {
       // Update companion stats
       console.log(`🧠 Updating companion stats for: ${selectedCompanion}`);
       userUpdateCompanionStats(user.uid, selectedCompanion, forcedSessionDuration);
-      updateCompanionAffinity(user.uid, selectedCompanion, forcedSessionDuration);
       updateCompanionMood(user.uid, selectedCompanion);
       
       // Check achievements
@@ -635,7 +632,6 @@ export default function TimerPage() {
   return (
     <div className="min-h-screen">
       <PolkaDotBackground dotColor={dotColor} />
-      <Navbar />
       
       {/* Achievement and Goal Notifications */}
       <AnimatePresence>
