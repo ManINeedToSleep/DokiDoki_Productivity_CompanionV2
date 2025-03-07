@@ -1,6 +1,6 @@
 import { db, Timestamp } from '@/lib/firebase';
 import { doc, updateDoc, arrayUnion, getDoc, increment } from 'firebase/firestore';
-import { UserDocument } from '@/lib/firebase/user';
+import { UserDocument, incrementCompletedGoals } from '@/lib/firebase/user';
 import { checkAllAchievements } from '@/lib/firebase/achievements';
 import { CompanionId } from '@/lib/firebase/companion';
 import { updateCompanionAfterGoalComplete } from '@/lib/firebase/companion';
@@ -72,7 +72,6 @@ export const updateGoalProgress = async (
   goalId: string,
   minutes: number
 ): Promise<void> => {
-  console.log(`🎯 Updating goal progress for ${goalId} with +${minutes} minutes`);
   const userRef = doc(db, 'users', uid);
   const userDoc = await getDoc(userRef);
   
@@ -122,6 +121,11 @@ export const updateGoalProgress = async (
     
     // Check for goal-related achievements
     await checkGoalAchievements(uid, allCompletedGoals, challengeGoals);
+
+    // Increment the completedGoals counter for each completed goal
+    for (const goal of justCompletedGoals) {
+      await incrementCompletedGoals(uid, goal.type === 'challenge');
+    }
   }
 };
 
@@ -138,6 +142,9 @@ export const completeGoal = async (
   const goal = userData.goals?.list.find(g => g.id === goalId);
   
   if (!goal) return {};
+  
+  // If goal is already completed, don't process it again
+  if (goal.completed) return {};
 
   let companionMessage: string | undefined;
 
@@ -187,6 +194,9 @@ export const completeGoal = async (
   await updateDoc(userRef, {
     'goals.list': updatedGoals
   });
+
+  // Increment the completedGoals counter
+  await incrementCompletedGoals(uid, goal.type === 'challenge');
 
   // Count challenge goals completed
   const challengeGoalsCompleted = (userData.goals?.list.filter(g => 
