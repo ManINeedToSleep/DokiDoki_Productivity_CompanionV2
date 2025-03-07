@@ -97,6 +97,7 @@ interface AchievementsState {
   applyReward: (uid: string, achievementId: string) => void;
   syncWithFirebase: (uid: string, force?: boolean) => Promise<void>;
   clearRecentlyUnlockedAchievement: () => void;
+  clearStore: () => void;
 }
 
 export const useAchievementsStore = create<AchievementsState>()(
@@ -109,6 +110,18 @@ export const useAchievementsStore = create<AchievementsState>()(
       error: null,
       lastSyncTime: null,
       recentlyUnlockedAchievement: null,
+      
+      // Add a new action to clear the store when user changes
+      clearStore: () => {
+        console.log('🧹 AchievementsStore: Clearing store data');
+        set({
+          achievements: [],
+          unlockedAchievements: [],
+          pendingUpdates: [],
+          lastSyncTime: null,
+          recentlyUnlockedAchievement: null
+        });
+      },
       
       setAchievements: (achievements) => set({ achievements }),
       

@@ -380,7 +380,6 @@ export const updateCompanionAfterSession = async (
     : Math.floor(sessionDuration / 120); // 1 point per 2 minutes if not completed
   
   const updates: { [key: string]: FieldValue | Timestamp | number } = {
-    'stats.totalInteractionTime': increment(sessionDuration),
     'lastInteraction': Timestamp.now(),
     'affinityLevel': Math.min(100, companionData.affinityLevel + affinityIncrease)
   };

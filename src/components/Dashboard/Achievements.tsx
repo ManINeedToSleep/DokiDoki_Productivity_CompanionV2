@@ -1,11 +1,12 @@
 "use client";
 
 import { motion } from 'framer-motion';
-import { FaMedal, FaArrowRight } from 'react-icons/fa';
+import { FaArrowRight } from 'react-icons/fa';
 import { UserDocument } from '@/lib/firebase/user';
-import { Achievement } from '@/lib/firebase/achievements';
+import { Achievement, ACHIEVEMENTS } from '@/lib/firebase/achievements';
 import { useRouter } from 'next/navigation';
 import { CompanionId } from '@/lib/firebase/companion';
+import { getCharacterColors } from '@/components/Common/CharacterColor/CharacterColor';
 
 // Extended Achievement type that includes the unlocked property
 interface DisplayAchievement extends Achievement {
@@ -16,6 +17,23 @@ interface AchievementsProps {
   userData: UserDocument | null;
 }
 
+// Helper function to get the achievement definition by ID
+function getAchievementById(id: string): Achievement | undefined {
+  // Check each category for the achievement
+  for (const category of Object.keys(ACHIEVEMENTS)) {
+    const categoryAchievements = ACHIEVEMENTS[category as keyof typeof ACHIEVEMENTS];
+    
+    // Check if this ID exists in this category
+    for (const achievementId of Object.keys(categoryAchievements)) {
+      if (achievementId === id) {
+        return categoryAchievements[achievementId as keyof typeof categoryAchievements];
+      }
+    }
+  }
+  
+  return undefined;
+}
+
 export default function Achievements({ userData }: AchievementsProps) {
   const router = useRouter();
   
@@ -24,83 +42,48 @@ export default function Achievements({ userData }: AchievementsProps) {
   const selectedCompanion = userData.settings.selectedCompanion || 'sayori';
   
   // Get character-specific colors
-  const getCharacterColors = (id: CompanionId) => {
-    switch (id) {
-      case 'sayori':
-        return { 
-          primary: '#FF9ED2',
-          secondary: '#FFEEF3',
-          text: '#D76C95',
-          heading: '#FF9ED2'
-        };
-      case 'natsuki':
-        return { 
-          primary: '#FF8DA1',
-          secondary: '#FFF0F0',
-          text: '#D14D61',
-          heading: '#FF8DA1'
-        };
-      case 'yuri':
-        return { 
-          primary: '#A49EFF',
-          secondary: '#F0F0FF',
-          text: '#6A61E0',
-          heading: '#A49EFF'
-        };
-      case 'monika':
-        return { 
-          primary: '#85CD9E',
-          secondary: '#F0FFF5',
-          text: '#4A9B68',
-          heading: '#85CD9E'
-        };
-      default:
-        return { 
-          primary: '#FF9ED2',
-          secondary: '#FFEEF3',
-          text: '#D76C95',
-          heading: '#FF9ED2'
-        };
-    }
-  };
-  
   const colors = getCharacterColors(selectedCompanion);
   
-  // For demo purposes, create some sample achievements
-  // In a real app, these would come from userData.achievements
-  const recentAchievements: DisplayAchievement[] = [
-    {
-      id: 'first_session',
-      title: 'First Step',
-      description: 'Complete your first focus session',
-      icon: '⭐',
-      type: 'focus',
-      unlockedAt: null,
-      unlocked: true,
-      requirement: { type: 'minutes', value: 1 }
-    },
-    {
-      id: 'weekly_warrior',
-      title: 'Weekly Warrior',
-      description: 'Maintain a 7-day focus streak',
-      icon: '📅',
-      type: 'streak',
-      unlockedAt: null,
-      unlocked: true,
-      requirement: { type: 'streak', value: 7 }
-    },
-    {
-      id: 'dedication',
-      title: 'Dedicated Student',
-      description: 'Accumulate 10 hours of focus time',
-      icon: '📚',
-      type: 'focus',
-      unlockedAt: null,
-      unlocked: true,
-      requirement: { type: 'minutes', value: 600 }
-    }
-  ];
+  // Get the user's achievements and sort them by unlock date (newest first)
+  const userAchievements = userData.achievements || [];
   
+  // Create display achievements with data from ACHIEVEMENTS definitions
+  const recentAchievements: DisplayAchievement[] = userAchievements
+    // Sort by unlocked date (newest first)
+    .sort((a, b) => {
+      if (!a.unlockedAt) return 1;
+      if (!b.unlockedAt) return -1;
+      return b.unlockedAt.toMillis() - a.unlockedAt.toMillis();
+    })
+    // Take the most recent 3
+    .slice(0, 3)
+    // Map to DisplayAchievement format
+    .map(achievement => {
+      // Find the achievement definition from the global ACHIEVEMENTS object
+      const achievementDef = getAchievementById(achievement.id);
+      
+      if (!achievementDef) {
+        // If the achievement definition is not found, create a placeholder
+        return {
+          id: achievement.id,
+          title: 'Achievement',
+          description: 'An achievement you unlocked',
+          icon: '🏆',
+          type: 'hidden',
+          unlockedAt: achievement.unlockedAt,
+          unlocked: true,
+          requirement: { type: 'special', value: 0 }
+        };
+      }
+      
+      // Return a DisplayAchievement that combines the user's achievement data with the definition
+      return {
+        ...achievementDef,
+        unlockedAt: achievement.unlockedAt,
+        unlocked: true
+      };
+    });
+
   return (
     <motion.div 
       className="bg-white rounded-xl shadow-md p-4"
@@ -137,17 +120,10 @@ export default function Achievements({ userData }: AchievementsProps) {
           ))}
         </div>
       ) : (
-        <div className="bg-gray-50 rounded-lg p-4 text-center">
-          <FaMedal className="mx-auto text-gray-300 mb-2" size={24} />
-          <p className="text-gray-700 text-sm font-[Halogen]">No achievements yet</p>
-          <button 
-            className="mt-2 text-xs hover:underline font-[Halogen]"
-            style={{ color: colors.text }}
-            onClick={() => router.push('/dashboard/achievements')}
-          >
-            View all achievements
-          </button>
-        </div>
+        <p className="text-sm text-gray-500 text-center py-6">
+          You haven&apos;t unlocked any achievements yet. 
+          Complete focus sessions and goals to earn achievements!
+        </p>
       )}
     </motion.div>
   );
@@ -161,46 +137,6 @@ interface AchievementItemProps {
 
 function AchievementItem({ achievement, index, companionId }: AchievementItemProps) {
   // Get character-specific colors
-  const getCharacterColors = (id: CompanionId) => {
-    switch (id) {
-      case 'sayori':
-        return { 
-          primary: '#FF9ED2',
-          secondary: '#FFEEF3',
-          text: '#D76C95',
-          badge: 'bg-pink-100 text-pink-600'
-        };
-      case 'natsuki':
-        return { 
-          primary: '#FF8DA1',
-          secondary: '#FFF0F0',
-          text: '#D14D61',
-          badge: 'bg-red-100 text-red-600'
-        };
-      case 'yuri':
-        return { 
-          primary: '#A49EFF',
-          secondary: '#F0F0FF',
-          text: '#6A61E0',
-          badge: 'bg-indigo-100 text-indigo-600'
-        };
-      case 'monika':
-        return { 
-          primary: '#85CD9E',
-          secondary: '#F0FFF5',
-          text: '#4A9B68',
-          badge: 'bg-green-100 text-green-600'
-        };
-      default:
-        return { 
-          primary: '#FF9ED2',
-          secondary: '#FFEEF3',
-          text: '#D76C95',
-          badge: 'bg-pink-100 text-pink-600'
-        };
-    }
-  };
-  
   const colors = getCharacterColors(companionId);
   
   // Format unlocked date

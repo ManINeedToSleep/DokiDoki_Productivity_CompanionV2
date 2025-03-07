@@ -25,7 +25,8 @@ export const getCharacterColors = (id: CompanionId) => {
         secondary: '#FFEEF3',
         text: '#D76C95',
         heading: '#FF9ED2',
-        progress: '#FF9ED2'
+        progress: '#FF9ED2',
+        badge: 'bg-pink-100 text-pink-600'
       };
     case 'natsuki':
       return { 
@@ -33,7 +34,8 @@ export const getCharacterColors = (id: CompanionId) => {
         secondary: '#FFF0F0',
         text: '#D14D61',
         heading: '#FF8DA1',
-        progress: '#FF8DA1'
+        progress: '#FF8DA1',
+        badge: 'bg-red-100 text-red-600'
       };
     case 'yuri':
       return { 
@@ -41,7 +43,8 @@ export const getCharacterColors = (id: CompanionId) => {
         secondary: '#F0F0FF',
         text: '#6A61E0',
         heading: '#A49EFF',
-        progress: '#A49EFF'
+        progress: '#A49EFF',
+        badge: 'bg-indigo-100 text-indigo-600'
       };
     case 'monika':
       return { 
@@ -49,7 +52,8 @@ export const getCharacterColors = (id: CompanionId) => {
         secondary: '#F0FFF5',
         text: '#4A9B68',
         heading: '#85CD9E',
-        progress: '#85CD9E'
+        progress: '#85CD9E',
+        badge: 'bg-green-100 text-green-600'
       };
     default:
       return { 
@@ -57,7 +61,8 @@ export const getCharacterColors = (id: CompanionId) => {
         secondary: '#FFEEF3',
         text: '#D76C95',
         heading: '#FF9ED2',
-        progress: '#FF9ED2'
+        progress: '#FF9ED2',
+        badge: 'bg-pink-100 text-pink-600'
       };
   }
 };

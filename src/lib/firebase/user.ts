@@ -487,6 +487,8 @@ export const recordFocusSession = async (
   const recentSessions = [newSession, ...userData.recentSessions].slice(0, 10);
   
   console.log("💾 Firebase: Updating user document with new stats and session data");
+  console.log(`🛑 Firebase: Session breaks: ${session.breaks.count}, Current total breaks: ${userData.focusStats.totalBreaks}, New total: ${userData.focusStats.totalBreaks + session.breaks.count}`);
+  
   // Update user stats
   try {
     await updateDoc(userRef, {
@@ -499,7 +501,7 @@ export const recordFocusSession = async (
       'focusStats.lastSessionDate': session.endTime,
       'focusStats.dailyStreak': dailyStreak,
       'focusStats.longestStreak': Math.max(dailyStreak, userData.focusStats.longestStreak),
-      'focusStats.totalBreaks': increment(session.breaks.count),
+      'focusStats.totalBreaks': userData.focusStats.totalBreaks + session.breaks.count,
       'focusStats.averageSessionDuration': averageSessionDuration,
       'recentSessions': recentSessions,
       [`companions.${session.companionId}.stats.sessionsCompleted`]: increment(session.completed ? 1 : 0),
