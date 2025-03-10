@@ -4,7 +4,7 @@ import { Goal } from '@/lib/firebase/goals';
 import { FaCheck, FaTrash, FaEdit, FaTrophy } from 'react-icons/fa';
 import Image from 'next/image';
 import GoalTypeBadge from './GoalTypeBadge';
-import { formatDate, isSystemGoal } from './GoalUtils';
+import { formatDate, isSystemGoal, getDeadlineDate } from './GoalUtils';
 
 interface GoalCardProps {
   goal: Goal;
@@ -102,7 +102,7 @@ const GoalCard: React.FC<GoalCardProps> = ({
                   </span>
                   <div className={`text-xs font-[Halogen] flex items-center gap-1 ${isExpired ? 'text-red-500' : ''}`} 
                     style={!isExpired ? { color: colors.text } : {}}>
-                    {formatDate(goal.deadline.toDate())}
+                    {formatDate(getDeadlineDate(goal.deadline))}
                     {!isExpired && goal.type === 'daily' && <span className="text-yellow-500">· Today</span>}
                     {!isExpired && goal.type === 'weekly' && <span className="text-blue-500">· This Week</span>}
                     {!isExpired && goal.type === 'challenge' && <span className="text-purple-500">· Challenge</span>}

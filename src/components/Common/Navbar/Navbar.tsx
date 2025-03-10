@@ -1,12 +1,13 @@
 "use client";
 
 import { usePathname, useRouter } from 'next/navigation';
-import { signOut } from 'firebase/auth';
+import { signOut, onAuthStateChanged } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 import Button from '@/components/Common/Button/Button';
 import { useEffect, useState } from 'react';
-import { getUserDocument } from '@/lib/firebase/user';
 import { CompanionId } from '@/lib/firebase/companion';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 
 const navItems = [
   { label: 'Home', path: '/dashboard' },
@@ -23,24 +24,41 @@ export default function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
   const [selectedCompanion, setSelectedCompanion] = useState<CompanionId>('sayori');
+  const [userId, setUserId] = useState<string | null>(null);
   
+  // Listen for auth state changes
   useEffect(() => {
-    const fetchUserData = async () => {
-      try {
-        const user = auth.currentUser;
-        if (user) {
-          const userData = await getUserDocument(user.uid);
-          if (userData?.settings?.selectedCompanion) {
-            setSelectedCompanion(userData.settings.selectedCompanion);
-          }
-        }
-      } catch (error) {
-        console.error('Error fetching user data:', error);
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        setUserId(user.uid);
+      } else {
+        setUserId(null);
+        setSelectedCompanion('sayori');
       }
-    };
+    });
     
-    fetchUserData();
+    return () => unsubscribe();
   }, []);
+  
+  // Listen for user document changes
+  useEffect(() => {
+    if (!userId) return;
+    
+    // Setup real-time listener for the user document
+    const userDocRef = doc(db, 'users', userId);
+    const unsubscribe = onSnapshot(userDocRef, (docSnapshot) => {
+      if (docSnapshot.exists()) {
+        const userData = docSnapshot.data();
+        if (userData?.settings?.selectedCompanion) {
+          setSelectedCompanion(userData.settings.selectedCompanion);
+        }
+      }
+    }, (error) => {
+      console.error('Error listening to user document:', error);
+    });
+    
+    return () => unsubscribe();
+  }, [userId]);
   
   const handleSignOut = async () => {
     try {

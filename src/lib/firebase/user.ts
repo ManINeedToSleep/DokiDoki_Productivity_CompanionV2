@@ -327,13 +327,30 @@ export const updateCompanionStats = async (
   companionId: CompanionId,
   interactionTime: number
 ): Promise<void> => {
+  console.log(`📊 updateCompanionStats: Updating stats for ${companionId} with ${interactionTime} seconds of interaction`);
+  
   const userRef = doc(db, 'users', uid);
   const userSnap = await getDoc(userRef);
 
-  if (!userSnap.exists()) return;
+  if (!userSnap.exists()) {
+    console.error(`❌ User ${uid} document not found`);
+    return;
+  }
 
   const userData = userSnap.data() as UserDocument;
   const companion = userData.companions[companionId];
+  
+  if (!companion) {
+    console.error(`❌ Companion ${companionId} not found in user data`);
+    return;
+  }
+  
+  console.log(`📊 Current companion stats:`, {
+    totalInteractionTime: companion.stats.totalInteractionTime,
+    consecutiveDays: companion.stats.consecutiveDays,
+    lastDailyInteraction: companion.stats.lastDailyInteraction.toDate()
+  });
+  
   const lastInteraction = companion.stats.lastDailyInteraction.toDate();
   const today = new Date();
 
@@ -343,7 +360,10 @@ export const updateCompanionStats = async (
     lastInteraction.getFullYear() !== today.getFullYear();
 
   const consecutiveDays = isNewDay ? companion.stats.consecutiveDays + 1 : companion.stats.consecutiveDays;
+  
+  console.log(`📊 Day status: isNewDay=${isNewDay}, currentConsecutiveDays=${companion.stats.consecutiveDays}, newConsecutiveDays=${consecutiveDays}`);
 
+  console.log(`💾 Updating companion stats in user document`);
   await updateDoc(userRef, {
     [`companions.${companionId}.stats.totalInteractionTime`]: increment(interactionTime),
     [`companions.${companionId}.stats.consecutiveDays`]: consecutiveDays,
@@ -351,6 +371,8 @@ export const updateCompanionStats = async (
     [`companions.${companionId}.lastInteraction`]: Timestamp.now(),
   });
 
+  console.log(`✅ Companion stats updated successfully`);
+  console.log(`🔄 Updating companion affinity next...`);
   await updateCompanionAffinity(uid, companionId, interactionTime);
 };
 
@@ -359,20 +381,55 @@ export const updateCompanionAffinity = async (
   companionId: CompanionId,
   interactionTime: number
 ): Promise<void> => {
+  console.log(`❤️ updateCompanionAffinity: Calculating affinity change for ${companionId} with ${interactionTime} seconds of interaction`);
+  
   const userRef = doc(db, 'users', uid);
   const userSnap = await getDoc(userRef);
 
-  if (!userSnap.exists()) return;
+  if (!userSnap.exists()) {
+    console.error(`❌ User ${uid} document not found`);
+    return;
+  }
 
   const userData = userSnap.data() as UserDocument;
-  const currentAffinity = userData.companions[companionId].affinityLevel;
+  const companion = userData.companions[companionId];
+  
+  if (!companion) {
+    console.error(`❌ Companion ${companionId} not found in user data`);
+    return;
+  }
 
-  const affinityIncrease = Math.floor(interactionTime / 30);
-  const newAffinity = Math.min(100, currentAffinity + affinityIncrease);
-
-  await updateDoc(userRef, {
-    [`companions.${companionId}.affinityLevel`]: newAffinity,
+  // Calculate affinity increase - base value is 1 point per minute of interaction
+  const baseAffinityIncrease = Math.ceil(interactionTime / 60);
+  
+  // Apply streak bonus - if streak is 3+ days, give bonus affinity
+  const streakBonus = companion.stats.consecutiveDays >= 3 ? Math.floor(companion.stats.consecutiveDays / 3) : 0;
+  
+  // Total increase
+  const totalAffinityIncrease = baseAffinityIncrease + streakBonus;
+  
+  // Cap at maximum of 100
+  const currentAffinity = companion.affinityLevel;
+  const newAffinity = Math.min(100, currentAffinity + totalAffinityIncrease);
+  
+  console.log(`❤️ Affinity calculation:`, {
+    baseIncrease: baseAffinityIncrease,
+    streakBonus: streakBonus,
+    totalIncrease: totalAffinityIncrease,
+    currentAffinity: currentAffinity,
+    newAffinity: newAffinity
   });
+
+  // Only update if there's an actual change
+  if (newAffinity > currentAffinity) {
+    console.log(`💾 Updating affinity from ${currentAffinity} to ${newAffinity}`);
+    await updateDoc(userRef, {
+      [`companions.${companionId}.affinityLevel`]: newAffinity
+    });
+    console.log(`✅ Affinity updated successfully`);
+  } else {
+    console.log(`ℹ️ No affinity change needed`);
+  }
 };
 
 /**

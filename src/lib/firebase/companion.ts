@@ -362,22 +362,36 @@ export const updateCompanionAfterSession = async (
   sessionDuration: number, // in seconds
   sessionCompleted: boolean
 ): Promise<void> => {
+  console.log(`🔍 updateCompanionAfterSession called: companion=${companionId}, duration=${sessionDuration}s, completed=${sessionCompleted}`);
+  
   // First update the basic stats in the user document
+  console.log(`📊 Updating basic companion stats in user document`);
   await updateCompanionStats(uid, companionId, sessionDuration);
   
   // Then update the detailed companion data
+  console.log(`🔍 Fetching detailed companion data for ${companionId}`);
   const companionRef = doc(db, `users/${uid}/companions`, companionId);
   const companionData = await getCompanionData(uid, companionId);
   
   if (!companionData) {
+    console.log(`⚠️ No companion data found for ${companionId}, initializing`);
     await initializeCompanionData(uid, companionId);
     return updateCompanionAfterSession(uid, companionId, sessionDuration, sessionCompleted);
   }
+  
+  console.log(`📊 Current companion stats:`, {
+    affinityLevel: companionData.affinityLevel,
+    mood: companionData.mood,
+    sessionsCompleted: companionData.stats.sessionsCompleted,
+    totalInteractionTime: companionData.stats.totalInteractionTime
+  });
   
   // Calculate affinity increase based on session duration and completion
   const affinityIncrease = sessionCompleted 
     ? Math.floor(sessionDuration / 60) // 1 point per minute if completed
     : Math.floor(sessionDuration / 120); // 1 point per 2 minutes if not completed
+  
+  console.log(`❤️ Calculated affinity increase: ${affinityIncrease} points (${sessionDuration} seconds, completed: ${sessionCompleted})`);
   
   const updates: { [key: string]: FieldValue | Timestamp | number } = {
     'lastInteraction': Timestamp.now(),
@@ -388,9 +402,16 @@ export const updateCompanionAfterSession = async (
     updates['stats.sessionsCompleted'] = increment(1);
   }
   
+  console.log(`💾 Updating companion data:`, {
+    newAffinityLevel: Math.min(100, companionData.affinityLevel + affinityIncrease),
+    incrementSessionsCompleted: sessionCompleted
+  });
+  
   await updateDoc(companionRef, updates);
+  console.log(`✅ Companion data updated successfully`);
   
   // Check for and trigger any new dialogue events
+  console.log(`🔍 Checking for new dialogue events`);
   await checkForDialogueEvents(uid, companionId);
 };
 

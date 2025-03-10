@@ -5,6 +5,7 @@ import { checkAllAchievements } from '@/lib/firebase/achievements';
 import { CompanionId } from '@/lib/firebase/companion';
 import { updateCompanionAfterGoalComplete } from '@/lib/firebase/companion';
 import { getCompanionDialogue } from '@/lib/firebase/dialogue';
+import { FocusSession } from './user';
 
 export interface Goal {
   id: string;
@@ -67,40 +68,114 @@ export const createCompanionGoal = async (
   return newGoal.id;
 };
 
+// Add this function to check if a session meets no-break requirements
+const sessionHasNoBreaks = (session: Partial<FocusSession>): boolean => {
+  // If breaks property doesn't exist, consider it as no breaks
+  if (!session.breaks) return true;
+  
+  return session.breaks.count === 0 && session.breaks.totalDuration === 0;
+};
+
+// Add this function to handle special goal criteria
+const sessionMeetsGoalCriteria = (goal: Goal, session: Partial<FocusSession>): boolean => {
+  // Check for special goal requirements
+  if (goal.title.toLowerCase().includes('without breaks') || 
+      goal.description.toLowerCase().includes('without breaks')) {
+    // If it's a "no breaks" goal, verify the session had no breaks
+    return sessionHasNoBreaks(session);
+  }
+  
+  // Default case - session meets criteria
+  return true;
+};
+
 export const updateGoalProgress = async (
   uid: string,
   goalId: string,
-  minutes: number
+  minutes: number,
+  session?: Partial<FocusSession>
 ): Promise<void> => {
+  console.log(`🔍 updateGoalProgress called for goalId="${goalId}" with ${minutes} minutes`);
+  
   const userRef = doc(db, 'users', uid);
   const userDoc = await getDoc(userRef);
   
-  if (!userDoc.exists()) return;
+  if (!userDoc.exists()) {
+    console.error(`❌ User ${uid} not found`);
+    return;
+  }
 
   const userData = userDoc.data() as UserDocument;
   const goalsList = userData.goals?.list || [];
+  const goal = goalsList.find(g => g.id === goalId);
+  
+  if (!goal) {
+    console.error(`❌ Goal ${goalId} not found in user's goals list`);
+    return;
+  }
+  
+  console.log(`🎯 Found goal: "${goal.title}" (${goal.type}), current progress: ${goal.currentMinutes}/${goal.targetMinutes}`);
+  
+  // For goals with special criteria, verify the session meets them
+  if (session) {
+    console.log(`📋 Session data:`, {
+      completed: session.completed,
+      duration: session.duration,
+      breaks: session.breaks ? {
+        count: session.breaks.count,
+        totalDuration: session.breaks.totalDuration
+      } : 'undefined'
+    });
+    
+    // Debug "without breaks" detection
+    const hasWithoutBreaksRequirement = 
+      goal.title.toLowerCase().includes('without breaks') || 
+      goal.description.toLowerCase().includes('without breaks');
+    
+    console.log(`🔍 Goal has "without breaks" requirement: ${hasWithoutBreaksRequirement}`);
+    
+    if (hasWithoutBreaksRequirement) {
+      // Check if session had no breaks
+      const hasNoBreaks = sessionHasNoBreaks(session);
+      console.log(`🔍 Session has no breaks: ${hasNoBreaks}`);
+      
+      if (!hasNoBreaks) {
+        console.log(`⚠️ Goal "${goal.title}" requires no breaks, but this session had breaks. Not updating progress.`);
+        return; // Don't update progress if breaks were taken
+      }
+    }
+    
+    if (!sessionMeetsGoalCriteria(goal, session)) {
+      console.log(`📊 Firebase: Goal "${goal.title}" has special criteria that weren't met by this session`);
+      return;
+    }
+  }
   
   // Update only the specific goal's progress - INCREMENT minutes, don't set them
-  const updatedGoals = goalsList.map(goal => {
-    if (goal.id === goalId) {
-      const newMinutes = goal.currentMinutes + minutes;
-      console.log(`📊 Firebase: Updating goal progress for "${goal.title}": ${goal.currentMinutes} → ${newMinutes} minutes`);
+  const updatedGoals = goalsList.map(goalItem => {
+    if (goalItem.id === goalId) {
+      const newMinutes = goalItem.currentMinutes + minutes;
+      console.log(`📊 Firebase: Updating goal progress for "${goalItem.title}": ${goalItem.currentMinutes} → ${newMinutes} minutes`);
       
       // Check if the goal is being completed with this update
-      const nowCompleted = newMinutes >= goal.targetMinutes;
+      const nowCompleted = newMinutes >= goalItem.targetMinutes;
       
       return { 
-        ...goal, 
+        ...goalItem, 
         currentMinutes: newMinutes,
         completed: nowCompleted
       };
     }
-    return goal;
+    return goalItem;
   });
 
+  console.log(`💾 Saving updated goals to Firebase...`);
+  
   await updateDoc(userRef, {
     'goals.list': updatedGoals
   });
+  
+  console.log(`✅ Goals progress updated successfully in Firebase`);
   
   // Check if any goals were just completed with this update
   const justCompletedGoals = updatedGoals.filter(goal => 
@@ -108,9 +183,11 @@ export const updateGoalProgress = async (
     !goalsList.find(g => g.id === goal.id)?.completed
   );
   
-  // If a goal was just completed, trigger the goal achievement check
   if (justCompletedGoals.length > 0) {
-    console.log(`🏆 Goal(s) just completed, checking goal achievements...`);
+    console.log(`🏆 ${justCompletedGoals.length} goal(s) just completed, checking goal achievements...`);
+    justCompletedGoals.forEach(goal => {
+      console.log(`  - "${goal.title}" completed (${goal.currentMinutes}/${goal.targetMinutes})`);
+    });
     
     // Import and call the checkGoalAchievements function
     const { checkGoalAchievements } = await import('./achievements');
@@ -280,13 +357,41 @@ export const refreshGoals = async (uid: string): Promise<void> => {
   // Count expired goals to calculate task completion rate accurately
   let expiredGoalsCount = 0;
   
+  // Helper function to safely convert a deadline to a Date object
+  const getDeadlineDate = (deadline: Timestamp | Date | number | string | undefined): Date => {
+    if (!deadline) return new Date(8640000000000000); // Far future date if no deadline
+    
+    // If it's a Timestamp object with toDate method
+    if (deadline && typeof (deadline as Timestamp).toDate === 'function') {
+      return (deadline as Timestamp).toDate();
+    }
+    
+    // If it's already a Date object
+    if (deadline instanceof Date) {
+      return deadline;
+    }
+    
+    // If it's a timestamp number
+    if (typeof deadline === 'number') {
+      return new Date(deadline);
+    }
+    
+    // If it's a string representation of a date
+    if (typeof deadline === 'string') {
+      return new Date(deadline);
+    }
+    
+    // Fallback
+    return new Date();
+  };
+  
   // Filter out expired goals and reset daily/weekly goals
   const updatedGoals = goalsList.filter(goal => {
     // Keep completed goals
     if (goal.completed) return true;
     
     // Check if goal has expired
-    if (goal.deadline.toDate() < now.toDate()) {
+    if (getDeadlineDate(goal.deadline) < now.toDate()) {
       console.log(`🎯 Firebase: Goal expired: "${goal.title}"`);
       expiredGoalsCount++;
       // Don't keep expired goals

@@ -7,10 +7,39 @@ import { Goal } from '@/lib/firebase/goals';
 import { useRouter } from 'next/navigation';
 import { CompanionId } from '@/lib/firebase/companion';
 import { getCharacterColors } from '@/components/Common/CharacterColor/CharacterColor';
+import { Timestamp } from '@/lib/firebase';
 
 interface GoalsProps {
   userData: UserDocument | null;
 }
+
+// First, let's add a helper function to safely convert a deadline to a Date object
+const getDeadlineDate = (deadline: Timestamp | Date | number | string | undefined): Date => {
+  if (!deadline) return new Date(8640000000000000); // Far future date if no deadline
+  
+  // If it's a Timestamp object with toDate method
+  if (deadline && typeof (deadline as Timestamp).toDate === 'function') {
+    return (deadline as Timestamp).toDate();
+  }
+  
+  // If it's already a Date object
+  if (deadline instanceof Date) {
+    return deadline;
+  }
+  
+  // If it's a timestamp number
+  if (typeof deadline === 'number') {
+    return new Date(deadline);
+  }
+  
+  // If it's a string representation of a date
+  if (typeof deadline === 'string') {
+    return new Date(deadline);
+  }
+  
+  // Fallback
+  return new Date();
+};
 
 export default function Goals({ userData }: GoalsProps) {
   const router = useRouter();
@@ -24,12 +53,12 @@ export default function Goals({ userData }: GoalsProps) {
   
   // Get active goals (not completed and not expired)
   const activeGoals = userData.goals?.list?.filter(goal => 
-    !goal.completed && new Date(goal.deadline.toDate()) > new Date()
+    !goal.completed && getDeadlineDate(goal.deadline) > new Date()
   ) || [];
   
   // Sort by deadline (closest first)
   activeGoals.sort((a, b) => 
-    a.deadline.toDate().getTime() - b.deadline.toDate().getTime()
+    getDeadlineDate(a.deadline).getTime() - getDeadlineDate(b.deadline).getTime()
   );
   
   // Take only the first 3
@@ -101,7 +130,7 @@ function GoalItem({ goal, index, companionId }: GoalItemProps) {
   const progress = Math.min(100, Math.round((goal.currentMinutes / goal.targetMinutes) * 100));
   
   // Format deadline
-  const deadline = goal.deadline.toDate();
+  const deadline = getDeadlineDate(goal.deadline);
   const formattedDeadline = new Intl.DateTimeFormat('en-US', { 
     month: 'short', 
     day: 'numeric' 

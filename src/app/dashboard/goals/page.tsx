@@ -16,7 +16,7 @@ import PolkaDotBackground from '@/components/Common/BackgroundCustom/PolkadotBac
 import { ACHIEVEMENTS, Achievement } from '@/lib/firebase/achievements';
 import { refreshGoals, assignRandomCompanionGoal, updateGoal as updateGoalFirebase, removeGoal as removeGoalFirebase } from '@/lib/firebase/goals';
 import { getCharacterDotColor, getCharacterColors } from '@/components/Common/CharacterColor/CharacterColor';
-import { GoalForm, GoalSection, isSystemGoal, isUserCreatedGoal, getTomorrowDateString } from '@/components/Goals';
+import { GoalForm, GoalSection, isSystemGoal, isUserCreatedGoal, getTomorrowDateString, getDeadlineDate } from '@/components/Goals';
 import AchievementNotification from '@/components/Common/Notifications/AchievementNotification';
 import GoalNotification from '@/components/Common/Notifications/GoalNotification';
 
@@ -187,7 +187,7 @@ export default function GoalsPage() {
       const now = new Date();
       const lastUpdated = userData.goals?.lastUpdated?.toDate() || new Date(0);
       const hasExpiredGoals = userData.goals?.list?.some(goal => 
-        !goal.completed && new Date(goal.deadline.toDate()) < now
+        !goal.completed && getDeadlineDate(goal.deadline) < now
       );
       
       // If goals haven't been updated today or there are expired goals, refresh them
@@ -260,7 +260,7 @@ export default function GoalsPage() {
   
   // Get active goals (not completed and not expired)
   const activeGoals = userData?.goals?.list?.filter(goal => 
-    !goal.completed && new Date(goal.deadline.toDate()) > new Date()
+    !goal.completed && getDeadlineDate(goal.deadline) > new Date()
   ) || [];
   
   // Get completed goals
@@ -270,17 +270,17 @@ export default function GoalsPage() {
   
   // Get expired goals (not completed and expired)
   const expiredGoals = userData?.goals?.list?.filter(goal => 
-    !goal.completed && new Date(goal.deadline.toDate()) <= new Date()
+    !goal.completed && getDeadlineDate(goal.deadline) <= new Date()
   ) || [];
   
   // Sort by deadline (closest first)
   activeGoals.sort((a, b) => 
-    a.deadline.toDate().getTime() - b.deadline.toDate().getTime()
+    getDeadlineDate(a.deadline).getTime() - getDeadlineDate(b.deadline).getTime()
   );
   
   // Sort by completion date (most recent first)
   completedGoals.sort((a, b) => 
-    b.deadline.toDate().getTime() - a.deadline.toDate().getTime()
+    getDeadlineDate(b.deadline).getTime() - getDeadlineDate(a.deadline).getTime()
   );
   
   // Update the handleAddGoal function to ensure goals appear immediately and handle errors properly

@@ -16,6 +16,7 @@ import {
 } from '@/lib/firebase/goals';
 import { CompanionId } from '@/lib/firebase/companion';
 import { useAchievementsStore } from './achievementsStore';
+import { FocusSession } from '@/lib/firebase/user';
 
 // Types for pending updates
 interface PendingGoalCreate {
@@ -36,6 +37,7 @@ interface PendingGoalUpdate {
   uid: string;
   goalId: string;
   minutes: number;
+  session?: Partial<FocusSession>;
 }
 
 interface PendingGoalComplete {
@@ -77,12 +79,13 @@ interface GoalsState {
   lastSyncTime: number | null;
   unlockedAchievement: string | null;
   recentlyUpdatedGoal: { goal: Goal, action: 'progress' | 'completed' } | null;
+  isSyncing: boolean;
   
   // Actions
   setGoals: (goals: Goal[]) => void;
   addGoal: (uid: string, goal: Omit<Goal, 'id' | 'createdAt' | 'currentMinutes' | 'completed'>) => void;
   addCompanionGoal: (uid: string, companionId: CompanionId, goal: Omit<Goal, 'id' | 'createdAt' | 'currentMinutes' | 'completed' | 'companionId'>) => void;
-  updateProgress: (uid: string, goalId: string, minutes: number) => void;
+  updateProgress: (uid: string, goalId: string, minutes: number, session?: Partial<FocusSession>) => void;
   markComplete: (uid: string, goalId: string) => void;
   deleteGoal: (uid: string, goalId: string) => void;
   editGoal: (uid: string, goalId: string, updates: { title?: string; description?: string; targetMinutes?: number; }) => void;
@@ -104,6 +107,7 @@ export const useGoalsStore = create<GoalsState>()(
       lastSyncTime: null,
       unlockedAchievement: null,
       recentlyUpdatedGoal: null,
+      isSyncing: false,
       
       setGoals: (goals) => set({ goals }),
       
@@ -163,7 +167,7 @@ export const useGoalsStore = create<GoalsState>()(
         }));
       },
       
-      updateProgress: (uid: string, goalId: string, minutes: number) => {
+      updateProgress: (uid: string, goalId: string, minutes: number, session?: Partial<FocusSession>) => {
         console.log(`🎯 GoalStore: Updating progress for goal ${goalId} with ${minutes} minutes`);
         
         // Add the update to pending updates
@@ -172,7 +176,8 @@ export const useGoalsStore = create<GoalsState>()(
             type: 'updateGoalProgress',
             uid,
             goalId,
-            minutes
+            minutes,
+            session
           };
           
           const updatedPendingUpdates = [...state.pendingUpdates, pendingUpdate];
@@ -213,8 +218,13 @@ export const useGoalsStore = create<GoalsState>()(
           };
         });
 
-        // Try to sync immediately
-        get().syncWithFirebase(uid);
+        // Only try to sync if we're not already syncing
+        const state = get();
+        if (!state.isSyncing) {
+          get().syncWithFirebase(uid);
+        } else {
+          console.log("🔄 GoalStore: Already syncing, queueing update for next sync");
+        }
       },
       
       markComplete: (uid: string, goalId: string) => {
@@ -365,7 +375,7 @@ export const useGoalsStore = create<GoalsState>()(
             const filteredGoals = state.goals.filter(goal => 
               goal.companionId !== companionId || 
               companionGoals.some(cg => cg.id === goal.id)
-            );
+            ); 
             
             // Add the new companion goals
             const newGoals = [
@@ -427,69 +437,99 @@ export const useGoalsStore = create<GoalsState>()(
           return;
         }
         
+        // Prevent syncing if already syncing
+        if (state.isSyncing) {
+          console.log("🔄 GoalsStore: Already syncing, skipping additional sync");
+          return;
+        }
+        
         console.log("🔄 GoalsStore: Syncing with Firebase...");
         console.log(`🔄 GoalsStore: ${state.pendingUpdates.length} pending updates to process`);
         
-        set({ isLoading: true });
+        // Set loading and syncing flags
+        set({ isLoading: true, isSyncing: true });
         
         try {
+          // Make a copy of the pending updates to process
+          const updatesToProcess = [...state.pendingUpdates];
+          
+          // Clear pending updates immediately to prevent re-processing
+          set({ pendingUpdates: [] });
+          
           // Process pending updates
-          if (state.pendingUpdates.length > 0) {
-            for (const update of state.pendingUpdates) {
+          if (updatesToProcess.length > 0) {
+            for (const update of updatesToProcess) {
               console.log(`🔄 GoalsStore: Processing update of type ${update.type}`);
               
-              switch (update.type) {
-                case 'createGoal':
-                  await createGoal(update.uid, update.goal);
-                  break;
-                  
-                case 'createCompanionGoal':
-                  await createCompanionGoal(
-                    update.uid, 
-                    update.companionId, 
-                    update.goal
-                  );
-                  break;
-                  
-                case 'updateGoalProgress':
-                  await updateGoalProgress(
-                    update.uid, 
-                    update.goalId, 
-                    update.minutes
-                  );
-                  break;
-                  
-                case 'completeGoal':
-                  await completeGoal(update.uid, update.goalId);
-                  break;
-                  
-                case 'removeGoal':
-                  await removeGoal(update.uid, update.goalId);
-                  break;
-                  
-                case 'updateGoal':
-                  await updateGoalFirebase(
-                    update.uid, 
-                    update.goalId, 
-                    update.updates
-                  );
-                  break;
+              try {
+                switch (update.type) {
+                  case 'createGoal':
+                    await createGoal(update.uid, update.goal);
+                    break;
+                    
+                  case 'createCompanionGoal':
+                    await createCompanionGoal(
+                      update.uid, 
+                      update.companionId, 
+                      update.goal
+                    );
+                    break;
+                    
+                  case 'updateGoalProgress':
+                    await updateGoalProgress(
+                      update.uid, 
+                      update.goalId, 
+                      update.minutes,
+                      update.session
+                    );
+                    break;
+                    
+                  case 'completeGoal':
+                    await completeGoal(update.uid, update.goalId);
+                    break;
+                    
+                  case 'removeGoal':
+                    await removeGoal(update.uid, update.goalId);
+                    break;
+                    
+                  case 'updateGoal':
+                    await updateGoalFirebase(
+                      update.uid, 
+                      update.goalId, 
+                      update.updates
+                    );
+                    break;
+                }
+              } catch (updateError) {
+                console.error(`❌ GoalsStore: Error processing update ${update.type}:`, updateError);
+                // Continue with other updates rather than failing everything
               }
             }
           }
           
-          // Set last sync time
+          // Set last sync time and clear loading/syncing flags
           set({ 
             isLoading: false,
-            lastSyncTime: Date.now(),
-            pendingUpdates: []
+            isSyncing: false,
+            lastSyncTime: Date.now()
           });
           
           console.log("✅ GoalsStore: Sync with Firebase complete");
+          
+          // Check if new updates were queued during processing and trigger another sync if needed
+          const newState = get();
+          if (newState.pendingUpdates.length > 0) {
+            console.log(`🔄 GoalsStore: ${newState.pendingUpdates.length} updates were queued during sync, processing...`);
+            // Small delay to allow state to settle
+            setTimeout(() => {
+              get().syncWithFirebase(uid, false);
+            }, 50);
+          }
         } catch (error) {
           console.error("❌ GoalsStore: Error syncing with Firebase:", error);
           set({ 
             isLoading: false,
+            isSyncing: false,
             error: error instanceof Error ? error.message : 'Unknown error syncing with Firebase'
           });
         }
