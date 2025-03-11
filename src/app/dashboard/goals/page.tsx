@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { getUserDocument } from '@/lib/firebase/user';
@@ -27,6 +27,9 @@ export default function GoalsPage() {
   const [isLoadingData, setIsLoadingData] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
+  
+  // Flag to prevent multiple simultaneous default goal setups
+  const isSettingUpDefaultGoals = useRef(false);
   
   // Get goals store
   const { 
@@ -120,7 +123,14 @@ export default function GoalsPage() {
     
     // Move setupDefaultGoals inside the useCallback
     const setupDefaultGoals = async (userId: string): Promise<boolean> => {
+      // If already setting up default goals, return early
+      if (isSettingUpDefaultGoals.current) {
+        console.log('Default goals setup already in progress, skipping duplicate call');
+        return false;
+      }
+      
       try {
+        isSettingUpDefaultGoals.current = true;
         console.log('Setting up default goals for user:', userId);
         // First refresh all goals to clear any expired ones
         await refreshAllGoals(userId);
@@ -139,6 +149,8 @@ export default function GoalsPage() {
       } catch (error) {
         console.error('Error creating default goals:', error);
         return false;
+      } finally {
+        isSettingUpDefaultGoals.current = false;
       }
     };
     

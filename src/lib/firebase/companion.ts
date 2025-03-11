@@ -393,9 +393,14 @@ export const updateCompanionAfterSession = async (
   
   console.log(`❤️ Calculated affinity increase: ${affinityIncrease} points (${sessionDuration} seconds, completed: ${sessionCompleted})`);
   
+  const currentLevel = Math.floor(companionData.affinityLevel / 100) + 1;
+  const newAffinity = Math.min(1000, companionData.affinityLevel + affinityIncrease);
+  const newLevel = Math.floor(newAffinity / 100) + 1;
+  const leveledUp = newLevel > currentLevel;
+  
   const updates: { [key: string]: FieldValue | Timestamp | number } = {
     'lastInteraction': Timestamp.now(),
-    'affinityLevel': Math.min(100, companionData.affinityLevel + affinityIncrease)
+    'affinityLevel': newAffinity
   };
   
   if (sessionCompleted) {
@@ -403,7 +408,11 @@ export const updateCompanionAfterSession = async (
   }
   
   console.log(`💾 Updating companion data:`, {
-    newAffinityLevel: Math.min(100, companionData.affinityLevel + affinityIncrease),
+    currentAffinity: companionData.affinityLevel,
+    currentLevel,
+    newAffinity,
+    newLevel,
+    leveledUp,
     incrementSessionsCompleted: sessionCompleted
   });
   
@@ -642,25 +651,40 @@ export const checkForUnlocks = async (
   const companionData = await getCompanionData(uid, companionId);
   if (!companionData) return [];
   
-  const newUnlocks: CompanionUnlockable[] = [];
-  let hasUpdates = false;
+  const companionLevel = getCompanionLevel(companionData.affinityLevel);
+  console.log(`🔓 Checking unlocks for ${companionId} at level ${companionLevel} (affinity: ${companionData.affinityLevel})`);
   
-  const updatedUnlockables = companionData.unlockables.map(item => {
-    if (!item.unlocked && item.requiredAffinity <= companionData.affinityLevel) {
-      hasUpdates = true;
-      newUnlocks.push(item);
-      return { ...item, unlocked: true };
+  const newlyUnlocked: CompanionUnlockable[] = [];
+  const companionRef = doc(db, `users/${uid}/companions`, companionId);
+  
+  const updatedUnlockables = [...companionData.unlockables];
+  
+  // Check each unlockable to see if it should be unlocked
+  for (let i = 0; i < updatedUnlockables.length; i++) {
+    const unlockable = updatedUnlockables[i];
+    
+    // If it's already unlocked, skip it
+    if (unlockable.unlocked) continue;
+    
+    // Calculate the equivalent level requirement (100 points per level)
+    const requiredLevel = Math.ceil(unlockable.requiredAffinity / 100);
+    
+    // If the companion level is high enough, unlock it
+    if (companionLevel >= requiredLevel) {
+      console.log(`🔓 Unlocking ${unlockable.name} for ${companionId} (required level: ${requiredLevel})`);
+      updatedUnlockables[i] = { ...unlockable, unlocked: true };
+      newlyUnlocked.push(updatedUnlockables[i]);
     }
-    return item;
-  });
+  }
   
-  if (hasUpdates) {
-    await updateDoc(doc(db, `users/${uid}/companions`, companionId), {
+  // If any unlockables were unlocked, update the companion data
+  if (newlyUnlocked.length > 0) {
+    await updateDoc(companionRef, {
       unlockables: updatedUnlockables
     });
   }
   
-  return newUnlocks;
+  return newlyUnlocked;
 };
 
 // Get a reminder message if user has been inactive
@@ -701,13 +725,34 @@ export const updateCompanionAfterGoalComplete = async (
   isCompanionGoal: boolean = false
 ): Promise<void> => {
   const companionRef = doc(db, `users/${uid}/companions`, companionId);
+  const companionData = await getCompanionData(uid, companionId);
+  
+  if (!companionData) {
+    console.log(`⚠️ No companion data found for ${companionId}, can't update after goal completion`);
+    return;
+  }
   
   // Affinity boost is higher if it was a companion-assigned goal
   const affinityIncrease = isCompanionGoal ? 5 : 2;
   
+  const currentLevel = Math.floor(companionData.affinityLevel / 100) + 1;
+  const newAffinity = Math.min(1000, companionData.affinityLevel + affinityIncrease);
+  const newLevel = Math.floor(newAffinity / 100) + 1;
+  const leveledUp = newLevel > currentLevel;
+  
+  console.log(`❤️ Goal completion affinity update for ${companionId}:`, {
+    wasCompanionGoal: isCompanionGoal,
+    affinityIncrease,
+    currentAffinity: companionData.affinityLevel,
+    currentLevel,
+    newAffinity,
+    newLevel,
+    leveledUp
+  });
+  
   await updateDoc(companionRef, {
     'stats.goalsCompleted': increment(1),
-    'affinityLevel': increment(affinityIncrease),
+    'affinityLevel': newAffinity,
     'lastInteraction': Timestamp.now()
   });
   
@@ -735,4 +780,23 @@ export const getAllCompanionsData = async (
   }
   
   return companions;
+};
+
+// Helper function to get companion level from affinity points
+export const getCompanionLevel = (affinityPoints: number): number => {
+  // Levels are 1-10, with each level requiring 100 points
+  // Level 1: 0-99 points
+  // Level 2: 100-199 points
+  // ...
+  // Level 10: 900-1000 points
+  return Math.min(10, Math.floor(affinityPoints / 100) + 1);
+};
+
+// Helper function to get points needed for next level
+export const getPointsToNextLevel = (affinityPoints: number): number => {
+  const currentLevel = getCompanionLevel(affinityPoints);
+  if (currentLevel >= 10) return 0; // Already at max level
+  
+  const pointsForNextLevel = currentLevel * 100;
+  return pointsForNextLevel - affinityPoints;
 }; 

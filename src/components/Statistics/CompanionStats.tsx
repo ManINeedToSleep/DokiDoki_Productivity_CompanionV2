@@ -72,7 +72,7 @@ export default function CompanionStats({
     
     // Calculate metrics (0-100 scale)
     const totalInteractionScore = Math.min(100, ((companion.interactionTime || 0) / 600) * 100); // Max at 10 hours
-    const affinityScore = Math.min(100, (companion.affinity / 100) * 100); // Max at 100 affinity
+    const affinityScore = Math.min(100, (companion.affinity / 1000) * 100); // Max at 1000 affinity (10 levels)
     const sessionScore = Math.min(100, (companion.sessions / 50) * 100); // Max at 50 sessions
     const goalScore = Math.min(100, (companion.goals / 20) * 100); // Max at 20 goals
     const streakScore = Math.min(100, ((companion.streak || 0) / 14) * 100); // Max at 14-day streak
@@ -112,7 +112,10 @@ export default function CompanionStats({
           />
           <Tooltip
             formatter={(value, name) => {
-              if (name === "affinity") return [`${value} points`, "Affinity"];
+              if (name === "affinity") {
+                const level = Math.floor((value as number) / 100) + 1;
+                return [`Level ${level} (${value} points)`, "Affinity"];
+              }
               if (name === "sessions") return [`${value}`, "Sessions"];
               if (name === "goals") return [`${value}`, "Goals"];
               if (name === "interactionTime") return [formatMinutes(value as number), "Interaction Time"];

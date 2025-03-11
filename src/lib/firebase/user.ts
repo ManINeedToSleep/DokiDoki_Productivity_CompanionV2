@@ -72,7 +72,7 @@ export interface UserDocument {
         sessionsCompleted: number;
         goalsCompleted: number;
         giftsReceived: string[];
-      };
+      };  
     };
   };
   focusStats: UserStats;
@@ -246,6 +246,41 @@ export const getUserDocument = async (uid: string): Promise<UserDocument | null>
       version: userData.version || 1
     };
     
+    // Check if it's a new day and reset todaysFocusTime if needed
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    
+    // Get the date from lastSessionDate
+    const lastSessionDate = updatedUserData.focusStats.lastSessionDate?.toDate();
+    
+    if (lastSessionDate) {
+      const lastSessionDay = new Date(
+        lastSessionDate.getFullYear(), 
+        lastSessionDate.getMonth(), 
+        lastSessionDate.getDate()
+      );
+      
+      // If the last session was on a different day than today, reset todaysFocusTime
+      const isNewDay = today.getTime() !== lastSessionDay.getTime();
+      
+      if (isNewDay && updatedUserData.focusStats.todaysFocusTime > 0) {
+        console.log(`📅 New day detected on data fetch. Resetting today's focus time from ${updatedUserData.focusStats.todaysFocusTime}s to 0s`);
+        
+        // Reset todaysFocusTime in the returned data
+        updatedUserData.focusStats.todaysFocusTime = 0;
+        
+        // Also update the value in Firebase
+        try {
+          await updateDoc(userRef, {
+            'focusStats.todaysFocusTime': 0
+          });
+          console.log("✅ Reset today's focus time in Firebase");
+        } catch (error) {
+          console.error("❌ Error resetting today's focus time:", error);
+        }
+      }
+    }
+    
     return updatedUserData;
   }
 
@@ -408,16 +443,17 @@ export const updateCompanionAffinity = async (
   // Total increase
   const totalAffinityIncrease = baseAffinityIncrease + streakBonus;
   
-  // Cap at maximum of 100
+  // Cap at maximum of 1000 (10 levels with 100 points each)
   const currentAffinity = companion.affinityLevel;
-  const newAffinity = Math.min(100, currentAffinity + totalAffinityIncrease);
+  const newAffinity = Math.min(1000, currentAffinity + totalAffinityIncrease);
   
   console.log(`❤️ Affinity calculation:`, {
     baseIncrease: baseAffinityIncrease,
     streakBonus: streakBonus,
     totalIncrease: totalAffinityIncrease,
     currentAffinity: currentAffinity,
-    newAffinity: newAffinity
+    newAffinity: newAffinity,
+    level: Math.floor(newAffinity / 100) + 1
   });
 
   // Only update if there's an actual change
@@ -562,18 +598,23 @@ export const recordFocusSession = async (
       'focusStats.averageSessionDuration': averageSessionDuration,
       'recentSessions': recentSessions,
       [`companions.${session.companionId}.stats.sessionsCompleted`]: increment(session.completed ? 1 : 0),
+      [`companions.${session.companionId}.stats.totalInteractionTime`]: increment(session.duration),
+      [`companions.${session.companionId}.lastInteraction`]: session.endTime,
     });
     console.log("✅ Firebase: Successfully updated user document with session data");
   } catch (error) {
     console.error("❌ Firebase: Error updating user document:", error);
   }
   
-  // Update companion stats
+  // Update companion mood (still needed) and affinity
   try {
-    await updateCompanionStats(uid, session.companionId, session.duration);
-    console.log(`✅ Firebase: Successfully updated companion stats for ${session.companionId}`);
+    // Update mood
+    await updateCompanionMood(uid, session.companionId);
+    // Update affinity directly (skip updateCompanionStats which would double count)
+    await updateCompanionAffinity(uid, session.companionId, session.duration);
+    console.log(`✅ Firebase: Successfully updated companion mood and affinity for ${session.companionId}`);
   } catch (error) {
-    console.error("❌ Firebase: Error updating companion stats:", error);
+    console.error("❌ Firebase: Error updating companion mood and affinity:", error);
   }
 };
 

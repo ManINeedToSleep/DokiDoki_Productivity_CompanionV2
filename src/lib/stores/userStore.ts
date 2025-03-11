@@ -540,6 +540,9 @@ export const useUserStore = create<UserState>()(
           } else if (typeof lastSessionDate === 'number') {
             // It's a timestamp in milliseconds
             lastSessionDateTime = new Date(lastSessionDate);
+          } else if (lastSessionDate.seconds !== undefined && lastSessionDate.nanoseconds !== undefined) {
+            // It's a Firestore Timestamp-like object with seconds and nanoseconds
+            lastSessionDateTime = new Date(lastSessionDate.seconds * 1000);
           } else {
             // Try to convert from other formats or log the issue
             console.warn(`⚠️ Unknown lastSessionDate format:`, lastSessionDate);

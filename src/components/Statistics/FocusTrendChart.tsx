@@ -225,8 +225,8 @@ export default function FocusTrendChart({
               type="monotone" 
               dataKey="sessions" 
               name="Sessions" 
-              stroke="#78C2AD"
-              activeDot={{ r: 6, fill: "#78C2AD" }}
+              stroke={colors.text}
+              activeDot={{ r: 6, fill: colors.text }}
               strokeWidth={2}
             />
           )}

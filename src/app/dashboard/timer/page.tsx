@@ -16,6 +16,7 @@ import { TimerDisplay, TimerControls, TimerSettings, TimerStats, TimerMessage, g
 import type { TimerSettings as TimerSettingsType } from '@/components/Timer/types';
 import AchievementNotification from '@/components/Common/Notifications/AchievementNotification';
 import GoalNotification from '@/components/Common/Notifications/GoalNotification';
+import Button from '@/components/Common/Button/Button';
 
 
 export default function TimerPage() {
@@ -49,7 +50,7 @@ export default function TimerPage() {
   const pausedTimeRef = useRef<number>(0);
   
   // Get stores
-  const { recordFocusSession: userRecordFocusSession, updateCompanionMood, updateCompanionStats: userUpdateCompanionStats, syncWithFirebase: userSyncWithFirebase, refreshUserData} = useUserStore();
+  const { recordFocusSession: userRecordFocusSession, updateCompanionMood, syncWithFirebase: userSyncWithFirebase, refreshUserData} = useUserStore();
   const { checkFocus, checkSession, syncWithFirebase: syncAchievements } = useAchievementsStore();
   const { updateProgress, syncWithFirebase: syncGoals } = useGoalsStore();
   
@@ -215,6 +216,15 @@ export default function TimerPage() {
       clearInterval(timerRef.current);
     }
     
+    // If a break is in progress, record it before resetting
+    if (timerState === 'break' && currentBreakStartTime) {
+      const breakDuration = Math.floor((Date.now() - currentBreakStartTime.getTime()) / 1000);
+      const newTotalBreakDuration = breakTotalDuration + breakDuration;
+      setBreakTotalDuration(newTotalBreakDuration);
+      console.log(`🛑 Break #${breakCount} interrupted - Duration: ${breakDuration}s, Total break time: ${newTotalBreakDuration}s`);
+      setCurrentBreakStartTime(null);
+    }
+    
     setTimerState('idle');
     setTimeRemaining(workDuration);
     setSessionStartTime(null);
@@ -227,6 +237,15 @@ export default function TimerPage() {
     
     if (timerRef.current) {
       clearInterval(timerRef.current);
+    }
+    
+    // If a break was in progress when session completed (edge case), record it
+    if (timerState === 'break' && currentBreakStartTime) {
+      const breakDuration = Math.floor((Date.now() - currentBreakStartTime.getTime()) / 1000);
+      const newTotalBreakDuration = breakTotalDuration + breakDuration;
+      setBreakTotalDuration(newTotalBreakDuration);
+      console.log(`🛑 Break interrupted by session completion - Duration: ${breakDuration}s, Total break time: ${newTotalBreakDuration}s`);
+      setCurrentBreakStartTime(null);
     }
     
     setTimerState('completed');
@@ -267,13 +286,18 @@ export default function TimerPage() {
           }
         };
         
+        // Log break information
+        console.log(`🛑 Session completed with 0 breaks, total break duration: 0s`);
+        
         // Record the session (updates local state and prepares Firebase update)
         console.log("💾 Recording session data:", JSON.stringify(session));
         userRecordFocusSession(user.uid, session);
         
-        // Update companion stats
-        console.log(`🧠 Updating companion stats for: ${selectedCompanion}`);
-        userUpdateCompanionStats(user.uid, selectedCompanion, forcedSessionDuration);
+        // We don't need to update companion stats separately - it's already done in recordFocusSession
+        // This was causing the double counting of interaction time
+        console.log(`🧠 Companion stats will be updated through the session recording`);
+        
+        // Still need to update the companion mood
         updateCompanionMood(user.uid, selectedCompanion);
         
         // Check achievements
@@ -415,13 +439,18 @@ export default function TimerPage() {
         }
       };
       
+      // Log break information
+      console.log(`🛑 Session completed with ${breakCount} break${breakCount === 1 ? '' : 's'}, total break duration: ${breakTotalDuration}s`);
+      
       // Record the session (updates local state and prepares Firebase update)
       console.log("💾 Recording session data:", JSON.stringify(session));
       userRecordFocusSession(user.uid, session);
       
-      // Update companion stats
-      console.log(`🧠 Updating companion stats for: ${selectedCompanion}`);
-      userUpdateCompanionStats(user.uid, selectedCompanion, forcedSessionDuration);
+      // We don't need to update companion stats separately - it's already done in recordFocusSession
+      // This was causing the double counting of interaction time
+      console.log(`🧠 Companion stats will be updated through the session recording`);
+      
+      // Still need to update the companion mood
       updateCompanionMood(user.uid, selectedCompanion);
       
       // Check achievements
@@ -554,8 +583,13 @@ export default function TimerPage() {
       const breakTime = isLongBreak ? longBreakDuration : breakDuration;
       
       // Increment break count
-      setBreakCount(prevCount => prevCount + 1);
-      setCurrentBreakStartTime(new Date());
+      const newBreakCount = breakCount + 1;
+      setBreakCount(newBreakCount);
+      console.log(`🛑 Starting break #${newBreakCount} - ${isLongBreak ? 'LONG' : 'short'} break (${breakTime}s)`);
+      
+      const breakStartTime = new Date();
+      setCurrentBreakStartTime(breakStartTime);
+      console.log(`🛑 Break start time: ${breakStartTime.toISOString()}`);
       
       setTimeRemaining(breakTime);
       setTimerState('break');
@@ -569,16 +603,26 @@ export default function TimerPage() {
         if (remaining <= 0) {
           // Break completed
           clearInterval(timerRef.current!);
+          
+          // Ensure this code runs by capturing the current values directly
+          const currentStartTime = currentBreakStartTime;
+          const currentCount = newBreakCount;
+          const currentTotalDuration = breakTotalDuration;
+          
+          if (currentStartTime) {
+            const breakDuration = Math.floor((Date.now() - currentStartTime.getTime()) / 1000);
+            const newTotalBreakDuration = currentTotalDuration + breakDuration;
+            
+            // Update state AFTER logging to ensure values are correct in the log
+            console.log(`🛑 Break #${currentCount} completed naturally - Duration: ${breakDuration}s, Total break time: ${newTotalBreakDuration}s`);
+            
+            setBreakTotalDuration(newTotalBreakDuration);
+            setCurrentBreakStartTime(null);
+          }
+          
           setTimerState('idle');
           setTimeRemaining(workDuration);
           setSessionMessage('');
-          
-          // Update break duration
-          if (currentBreakStartTime) {
-            const breakDuration = Math.floor((Date.now() - currentBreakStartTime.getTime()) / 1000);
-            setBreakTotalDuration(prevDuration => prevDuration + breakDuration);
-            setCurrentBreakStartTime(null);
-          }
         } else {
           setTimeRemaining(remaining);
         }
@@ -709,6 +753,22 @@ export default function TimerPage() {
               companionId={selectedCompanion}
               colors={colors}
             />
+            
+            {/* Skip Break Button - Only show during breaks */}
+            {timerState === 'break' && (
+              <motion.div 
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mt-4"
+              >
+                <Button 
+                  onClick={resetTimer} 
+                  className="text-sm text-gray-500 hover:text-gray-700"
+                  label="Skip Break"
+                  companionId={selectedCompanion}
+                />
+              </motion.div>
+            )}
           </motion.div>
           
           {/* Settings Panel */}

@@ -8,6 +8,9 @@ export type ExtendedCompanionMood =
 // Background ID type
 export type BackgroundId = keyof typeof imagePaths.characterBackgrounds;
 
+// Scene Background ID type
+export type SceneBackgroundId = keyof typeof imagePaths.sceneBackgrounds;
+
 export const imagePaths = {
   characterBackgrounds: {
     monikaTrust1: "/images/characters/character_backgrounds/Monika-Trust-1.png",
@@ -85,6 +88,14 @@ export const imagePaths = {
   backgrounds: {
     menuBackground: "/images/backgrounds/Menu-Background.png",
     menuOption: "/images/backgrounds/Menu-Option.png",
+  },
+  sceneBackgrounds: {
+    classroom: "/images/backgrounds/classroom.png",
+    clubroom: "/images/backgrounds/clubroom.png",
+    hallway: "/images/backgrounds/hallway.png",
+    kitchen: "/images/backgrounds/kitchen.png",
+    library: "/images/backgrounds/library.png",
+    store: "/images/backgrounds/store.png",
   }
 };
 
@@ -113,4 +124,14 @@ export const getCharacterBackgroundPathByString = (backgroundId: string): string
     return imagePaths.characterBackgrounds[backgroundId as BackgroundId];
   }
   return ''; // Return empty string if not found
+};
+
+// Helper function to get a scene background path
+export const getSceneBackgroundPath = (backgroundId: string): string => {
+  // Check if the backgroundId is a valid key in sceneBackgrounds
+  if (backgroundId in imagePaths.sceneBackgrounds) {
+    return imagePaths.sceneBackgrounds[backgroundId as SceneBackgroundId];
+  }
+  // Return default classroom if not found
+  return imagePaths.sceneBackgrounds.classroom;
 };
