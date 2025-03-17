@@ -28,6 +28,11 @@ service cloud.firestore {
       match /chats/{chatId} {
         allow read, write: if isSignedIn() && isOwner(userId);
       }
+      
+      // Rules for settings subcollection
+      match /settings/{settingId} {
+        allow read, write: if isSignedIn() && isOwner(userId);
+      }
     }
     
     // Public companion dialogue (read-only)

@@ -14,7 +14,7 @@ const navItems = [
   { label: 'Timer', path: '/dashboard/timer' },
   { label: 'Goals', path: '/dashboard/goals' },
   { label: 'Stats', path: '/dashboard/statistics' },
-  { label: 'Chat', path: '/chat' },
+  { label: 'Chat', path: '/dashboard/chat' },
   { label: 'Achievements', path: '/dashboard/achievements' },
   { label: 'Settings', path: '/dashboard/settings' },
 ];

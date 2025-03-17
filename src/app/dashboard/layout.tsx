@@ -4,6 +4,7 @@ import { ReactNode } from 'react';
 import ProtectedRoute from '@/components/Common/Auth/ProtectedRoute';
 import { useSyncAllData } from '@/lib/stores';
 import Navbar from '@/components/Common/Navbar/Navbar';
+import AuthRefresher from '@/components/AuthRefresher';
 
 // Add styles for scrollbar hiding
 const scrollbarHidingStyles = `
@@ -29,6 +30,9 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   
   return (
     <ProtectedRoute>
+      {/* Add AuthRefresher to manage Firebase token refreshing */}
+      <AuthRefresher />
+      
       {/* Add style tag for scrollbar hiding */}
       <style jsx global>{scrollbarHidingStyles}</style>
       

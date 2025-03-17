@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { Timestamp } from 'firebase/firestore';
-import React from 'react';
+import React, { useEffect } from 'react';
 import { 
   UserDocument, 
   FocusSession,
@@ -19,7 +19,7 @@ import {
 } from '@/lib/firebase/user';
 import { CompanionId } from '@/lib/firebase/companion';
 import { doc, updateDoc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { db, auth } from '@/lib/firebase';
 
 // Types for pending updates
 interface PendingFocusGoalsUpdate {
@@ -747,4 +747,51 @@ export function useSyncUserData() {
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, [user, syncWithFirebase]);
+}
+
+// This is in the useUserData hook
+export function useUserData() {
+  const { user, isLoading, error, syncWithFirebase, refreshUserData } = useUserStore(
+    (state) => ({
+      user: state.user,
+      isLoading: state.isLoading,
+      error: state.error,
+      syncWithFirebase: state.syncWithFirebase,
+      refreshUserData: state.refreshUserData
+    })
+  );
+
+  // Subscribe to auth state changes and sync user data
+  useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged(async (user) => {
+      if (user) {
+        console.log(`🔑 UserStore: Auth state changed - user ${user.uid} logged in, syncing data`);
+        
+        // Check token status
+        try {
+          const tokenResult = await user.getIdTokenResult();
+          const expTime = new Date(tokenResult.expirationTime);
+          const timeUntilExp = expTime.getTime() - Date.now();
+          console.log(`🔑 UserStore: Token expires in ${Math.round(timeUntilExp/60000)} minutes`);
+          
+          // Force refresh token if it's close to expiring (less than 5 minutes)
+          if (timeUntilExp < 5 * 60 * 1000) {
+            console.log('⚠️ UserStore: Token expiring soon, forcing refresh before data sync');
+            await user.getIdToken(true);
+            console.log('✅ UserStore: Token force-refreshed successfully');
+          }
+        } catch (tokenErr) {
+          console.error('❌ UserStore: Error checking token:', tokenErr);
+        }
+        
+        await syncWithFirebase(user.uid);
+      } else {
+        console.log('🔑 UserStore: Auth state changed - user logged out');
+      }
+    });
+
+    return () => unsubscribe();
+  }, [syncWithFirebase, refreshUserData]);
+
+  return { userData: user, loading: isLoading, error, refreshUserData };
 } 

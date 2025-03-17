@@ -12,6 +12,7 @@ interface CompanionDisplayProps {
   showSpeechBubble?: boolean;
   speechText?: string;
   onSpeechEnd?: () => void;
+  disableAnimation?: boolean;
 }
 
 export default function CompanionDisplay({
@@ -19,7 +20,8 @@ export default function CompanionDisplay({
   mood = 'happy',
   showSpeechBubble = false,
   speechText = '',
-  onSpeechEnd
+  onSpeechEnd,
+  disableAnimation = false
 }: CompanionDisplayProps) {
   const [displayedText, setDisplayedText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -76,6 +78,9 @@ export default function CompanionDisplay({
   const [idleAnimation, setIdleAnimation] = useState(0);
   
   useEffect(() => {
+    // Skip animation if disabled
+    if (disableAnimation) return;
+    
     const interval = setInterval(() => {
       // Random number between 0 and 3
       const randomAnim = Math.floor(Math.random() * 4);
@@ -83,10 +88,13 @@ export default function CompanionDisplay({
     }, 5000);
     
     return () => clearInterval(interval);
-  }, []);
+  }, [disableAnimation]);
   
   // Get animation based on current idle state
   const getIdleAnimation = () => {
+    // Return empty object if animations are disabled
+    if (disableAnimation) return {};
+    
     switch (idleAnimation) {
       case 0:
         return { y: [0, -10, 0], transition: { duration: 2, ease: "easeInOut" } };
@@ -149,13 +157,13 @@ export default function CompanionDisplay({
       {/* Character image */}
       <motion.div
         className="relative w-full h-full flex items-center justify-center"
-        initial={{ opacity: 0, scale: 0.9 }}
+        initial={disableAnimation ? { opacity: 1, scale: 1 } : { opacity: 0, scale: 0.9 }}
         animate={{ 
           opacity: 1, 
           scale: 1,
-          ...getIdleAnimation()
+          ...(disableAnimation ? {} : getIdleAnimation())
         }}
-        transition={{ duration: 0.5 }}
+        transition={{ duration: disableAnimation ? 0 : 0.5 }}
       >
         <Image
           src={getCharacterSpritePath()}

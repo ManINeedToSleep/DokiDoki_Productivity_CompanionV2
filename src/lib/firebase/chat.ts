@@ -10,9 +10,24 @@ import {
   limit, 
   doc, 
   updateDoc, 
-  serverTimestamp
+  serverTimestamp,
+  getDoc,
+  increment,
+  setDoc
 } from 'firebase/firestore';
 import { updateUserLastActive } from './user';
+import { auth } from '@/lib/firebase';
+
+// Add a simple in-memory cache to prevent duplicate message processing
+// This is a basic solution - in a production app you might use a more robust solution
+const recentMessageIds = new Set<string>();
+const recentMessageTimes = new Map<string, number>();
+const MAX_CACHE_SIZE = 100;
+const MIN_TIME_BETWEEN_DUPLICATES = 1500; // 1.5 seconds - slightly less strict
+
+// Add a simple content-based cache to catch duplicate content regardless of ID
+const recentMessageContents = new Map<string, number>();
+const MAX_CONTENT_CACHE_SIZE = 20;
 
 export interface ChatMessageType {
   id: string;
@@ -22,8 +37,16 @@ export interface ChatMessageType {
   companionId: CompanionId;
 }
 
+export interface ChatUsage {
+  dailyMessageCount: number;
+  lastMessageDate: Timestamp;
+}
+
 // Maximum number of messages to retrieve
 const MAX_CHAT_HISTORY = 50;
+
+// Maximum messages per day
+export const MAX_DAILY_MESSAGES = 50;
 
 /**
  * Add a new chat message to the database
@@ -34,20 +57,146 @@ export const addChatMessage = async (
   message: ChatMessageType
 ): Promise<void> => {
   try {
+    console.log(`📝 Chat.ts: Adding new chat message for user ${userId} with companion ${companionId}`);
+    
+    // Get message prefix for more precise matching (first 20 chars of ID)
+    const messageIdPrefix = message.id.substring(0, 20);
+    const now = Date.now();
+    
+    // Check if this message ID has been processed recently (deduplication)
+    if (recentMessageIds.has(message.id)) {
+      console.log(`🔄 Chat.ts: Skipping exact duplicate message with ID ${message.id}`);
+      return;
+    }
+    
+    // Generate a content-based key for companion messages (more lenient for AI responses)
+    if (message.sender === 'companion') {
+      // For companion messages, use a content hash to detect duplicates
+      const contentKey = `${userId}_${companionId}_${message.content.substring(0, 40)}`;
+      
+      if (recentMessageContents.has(contentKey)) {
+        const lastTime = recentMessageContents.get(contentKey) || 0;
+        if (now - lastTime < 10000) { // 10 seconds for content-based deduplication
+          console.log(`🔄 Chat.ts: Skipping duplicate companion message based on content similarity`);
+          return;
+        }
+      }
+      
+      // Add to content cache
+      recentMessageContents.set(contentKey, now);
+      
+      // Trim content cache if needed
+      if (recentMessageContents.size > MAX_CONTENT_CACHE_SIZE) {
+        const oldestKey = Array.from(recentMessageContents.entries())
+          .sort((a, b) => a[1] - b[1])[0][0];
+        recentMessageContents.delete(oldestKey);
+      }
+    } else {
+      // Check if a similar message ID was processed very recently (for user messages)
+      // This catches cases where a slightly different ID is generated in rapid succession
+      for (const existingId of recentMessageIds) {
+        // If the ID prefix matches and the message was processed within the timeout period
+        if (existingId.startsWith(messageIdPrefix.substring(0, 15))) {
+          const lastTime = recentMessageTimes.get(existingId) || 0;
+          if (now - lastTime < MIN_TIME_BETWEEN_DUPLICATES) {
+            console.log(`🔄 Chat.ts: Skipping probable duplicate message. 
+              - Existing ID: ${existingId.substring(0, 20)}... 
+              - New ID: ${message.id.substring(0, 20)}...
+              - Time difference: ${now - lastTime}ms`);
+            return;
+          }
+        }
+      }
+    }
+    
+    // Add to recent messages cache
+    recentMessageIds.add(message.id);
+    recentMessageTimes.set(message.id, now);
+    
+    // Trim cache if it gets too large
+    if (recentMessageIds.size > MAX_CACHE_SIZE) {
+      // Get oldest 20 items to remove
+      const idsToRemove = Array.from(recentMessageTimes.entries())
+        .sort((a, b) => a[1] - b[1])
+        .slice(0, 20)
+        .map(entry => entry[0]);
+      
+      idsToRemove.forEach(id => {
+        recentMessageIds.delete(id);
+        recentMessageTimes.delete(id);
+      });
+    }
+    
+    // Log current auth state
+    if (auth.currentUser) {
+      console.log(`🔑 Chat.ts: Current auth user when adding message: ${auth.currentUser.uid}`);
+      
+      // Check if user IDs match
+      if (auth.currentUser.uid !== userId) {
+        console.warn(`⚠️ Chat.ts: Auth user ID (${auth.currentUser.uid}) doesn't match requested user ID (${userId})`);
+      }
+      
+      try {
+        // Check token expiration
+        const tokenResult = await auth.currentUser.getIdTokenResult();
+        const expTime = new Date(tokenResult.expirationTime);
+        const timeUntilExp = expTime.getTime() - Date.now();
+        console.log(`🔑 Chat.ts: Token expires in ${Math.round(timeUntilExp/60000)} minutes when adding message`);
+        
+        // Force refresh token if it's close to expiring (less than 5 minutes)
+        if (timeUntilExp < 5 * 60 * 1000) {
+          console.log('⚠️ Chat.ts: Token expiring soon, forcing refresh before adding message');
+          await auth.currentUser.getIdToken(true);
+          console.log('✅ Chat.ts: Token force-refreshed successfully before adding message');
+        }
+      } catch (e) {
+        console.error('❌ Chat.ts: Error checking token expiration when adding message:', e);
+      }
+    } else {
+      console.warn('⚠️ Chat.ts: No authenticated user found when adding chat message!');
+    }
+    
+    // First check and update usage limits
+    console.log('📊 Chat.ts: Checking message usage limits');
+    const canSendMessage = await checkAndUpdateUsage(userId);
+    
+    if (!canSendMessage) {
+      console.log('⛔ Chat.ts: Daily message limit reached');
+      throw new Error('Daily message limit reached. Try again tomorrow!');
+    }
+    
     // Update user's last active timestamp
+    console.log('⏱️ Chat.ts: Updating user last active time');
     await updateUserLastActive(userId);
     
     // Add message to the chat collection
+    console.log('💬 Chat.ts: Adding message to Firestore');
     const chatCollection = collection(db, 'users', userId, 'chats');
     await addDoc(chatCollection, {
       sender: message.sender,
       content: message.content,
-      timestamp: serverTimestamp(),
+      timestamp: message.timestamp,
       companionId: companionId,
     });
     
+    console.log('✅ Chat.ts: Message added successfully');
+    
   } catch (error) {
-    console.error('Error adding chat message:', error);
+    console.error('❌ Chat.ts: Error adding chat message:', error);
+    
+    // Log specific error details for Firestore permission issues
+    if (error instanceof Error) {
+      if (error.message.includes('permission')) {
+        console.error(`🔒 Chat.ts: Permission denied error details when adding message: 
+          - User ID: ${userId}
+          - Companion ID: ${companionId}
+          - Error message: ${error.message}
+          - Is Auth Current User set: ${!!auth.currentUser}
+          - Auth UID: ${auth.currentUser?.uid}
+        `);
+      }
+    }
+    
     throw error;
   }
 };
@@ -60,7 +209,32 @@ export const getChatHistory = async (
   companionId: CompanionId
 ): Promise<ChatMessageType[]> => {
   try {
+    console.log(`📝 Chat.ts: Fetching chat history for user ${userId} with companion ${companionId}`);
+    
+    // Log current auth state
+    if (auth.currentUser) {
+      console.log(`🔑 Chat.ts: Current auth user: ${auth.currentUser.uid}`);
+      // Check if user IDs match
+      if (auth.currentUser.uid !== userId) {
+        console.warn(`⚠️ Chat.ts: Auth user ID (${auth.currentUser.uid}) doesn't match requested user ID (${userId})`);
+      }
+      
+      try {
+        // Check token expiration
+        const tokenResult = await auth.currentUser.getIdTokenResult();
+        const expTime = new Date(tokenResult.expirationTime);
+        const timeUntilExp = expTime.getTime() - Date.now();
+        console.log(`🔑 Chat.ts: Token expires in ${Math.round(timeUntilExp/60000)} minutes (${expTime.toLocaleString()})`);
+      } catch (e) {
+        console.error('❌ Chat.ts: Error checking token expiration:', e);
+      }
+    } else {
+      console.warn('⚠️ Chat.ts: No authenticated user found when fetching chat history');
+    }
+    
     const chatCollection = collection(db, 'users', userId, 'chats');
+    console.log(`🔍 Chat.ts: Query path - users/${userId}/chats`);
+    
     const q = query(
       chatCollection,
       where('companionId', '==', companionId),
@@ -68,7 +242,10 @@ export const getChatHistory = async (
       limit(MAX_CHAT_HISTORY)
     );
     
+    console.log('🔍 Chat.ts: Executing Firestore query for messages');
     const querySnapshot = await getDocs(q);
+    console.log(`✅ Chat.ts: Query executed successfully, got ${querySnapshot.size} documents`);
+    
     const messages: ChatMessageType[] = [];
     
     querySnapshot.forEach((doc) => {
@@ -82,11 +259,27 @@ export const getChatHistory = async (
       });
     });
     
+    console.log(`✅ Chat.ts: Processed ${messages.length} messages, returning chat history`);
+    
     // Return messages in chronological order
     return messages.reverse();
     
   } catch (error) {
-    console.error('Error getting chat history:', error);
+    console.error('❌ Chat.ts: Error getting chat history:', error);
+    
+    // Log specific error details for Firestore permission issues
+    if (error instanceof Error) {
+      if (error.message.includes('permission')) {
+        console.error(`🔒 Chat.ts: Permission denied error details: 
+          - User ID: ${userId}
+          - Companion ID: ${companionId}
+          - Error message: ${error.message}
+          - Is Auth Current User set: ${!!auth.currentUser}
+          - Auth UID: ${auth.currentUser?.uid}
+        `);
+      }
+    }
+    
     return [];
   }
 };
@@ -120,4 +313,151 @@ export const clearChatHistory = async (
     console.error('Error clearing chat history:', error);
     throw error;
   }
-}; 
+};
+
+// Get current chat usage
+export const getChatUsage = async (
+  userId: string
+): Promise<ChatUsage> => {
+  try {
+    const usageRef = doc(db, `users/${userId}/settings/chatUsage`);
+    const usageSnap = await getDoc(usageRef);
+    
+    if (usageSnap.exists()) {
+      return usageSnap.data() as ChatUsage;
+    } else {
+      // Create default usage document if it doesn't exist
+      const defaultUsage: ChatUsage = {
+        dailyMessageCount: 0,
+        lastMessageDate: Timestamp.now()
+      };
+      
+      await setDoc(usageRef, defaultUsage);
+      return defaultUsage;
+    }
+  } catch (error) {
+    console.error('Error getting chat usage:', error);
+    // Return default if we can't access the document
+    return {
+      dailyMessageCount: 0,
+      lastMessageDate: Timestamp.now()
+    };
+  }
+};
+
+// Check if user has reached daily limit and update usage count
+export const checkAndUpdateUsage = async (
+  userId: string
+): Promise<boolean> => {
+  try {
+    const usageRef = doc(db, `users/${userId}/settings/chatUsage`);
+    const usageSnap = await getDoc(usageRef);
+    
+    const now = Timestamp.now();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    if (usageSnap.exists()) {
+      const usage = usageSnap.data() as ChatUsage;
+      const lastDate = usage.lastMessageDate.toDate();
+      const lastDay = new Date(lastDate);
+      lastDay.setHours(0, 0, 0, 0);
+      
+      // Check if it's a new day
+      const isNewDay = today.getTime() !== lastDay.getTime();
+      
+      if (isNewDay) {
+        // Reset for new day
+        await updateDoc(usageRef, {
+          dailyMessageCount: 1, // This message counts as the first one
+          lastMessageDate: now
+        });
+        return true;
+      } else {
+        // Same day, check against limit
+        if (usage.dailyMessageCount >= MAX_DAILY_MESSAGES) {
+          return false; // Limit reached
+        }
+        
+        // Increment counter
+        await updateDoc(usageRef, {
+          dailyMessageCount: increment(1),
+          lastMessageDate: now
+        });
+        return true;
+      }
+    } else {
+      // Create new usage document
+      const newUsage: ChatUsage = {
+        dailyMessageCount: 1,
+        lastMessageDate: now
+      };
+      
+      await setDoc(usageRef, newUsage);
+      return true;
+    }
+  } catch (error) {
+    console.error('Error checking usage limits:', error);
+    // If we can't check limits, default to allowing the message
+    return true;
+  }
+};
+
+// Get remaining messages for today
+export const getRemainingMessages = async (
+  userId: string
+): Promise<number> => {
+  try {
+    console.log(`📊 Chat.ts: Checking remaining messages for user ${userId}`);
+    
+    // Log current auth state
+    if (auth.currentUser) {
+      console.log(`🔑 Chat.ts: Current auth user when checking messages: ${auth.currentUser.uid}`);
+      
+      // Check if user IDs match
+      if (auth.currentUser.uid !== userId) {
+        console.warn(`⚠️ Chat.ts: Auth user ID (${auth.currentUser.uid}) doesn't match requested user ID (${userId})`);
+      }
+    } else {
+      console.warn('⚠️ Chat.ts: No authenticated user found when checking remaining messages');
+    }
+    
+    console.log('📊 Chat.ts: Getting current chat usage');
+    const usage = await getChatUsage(userId);
+    
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    
+    const lastDate = usage.lastMessageDate.toDate();
+    const lastDay = new Date(lastDate.getFullYear(), lastDate.getMonth(), lastDate.getDate());
+    
+    console.log(`📊 Chat.ts: Daily message count: ${usage.dailyMessageCount}, last message date: ${lastDate.toLocaleString()}`);
+    
+    // If it's a new day, they have all messages available
+    if (today.getTime() !== lastDay.getTime()) {
+      console.log('📊 Chat.ts: New day detected, resetting message count');
+      return MAX_DAILY_MESSAGES;
+    }
+    
+    // Calculate remaining
+    const remaining = Math.max(0, MAX_DAILY_MESSAGES - usage.dailyMessageCount);
+    console.log(`📊 Chat.ts: User has ${remaining} messages remaining today`);
+    return remaining;
+  } catch (error) {
+    console.error('❌ Chat.ts: Error getting remaining messages:', error);
+    
+    // Log specific error details for Firestore permission issues
+    if (error instanceof Error) {
+      if (error.message.includes('permission')) {
+        console.error(`🔒 Chat.ts: Permission denied error details when checking remaining messages: 
+          - User ID: ${userId}
+          - Error message: ${error.message}
+          - Is Auth Current User set: ${!!auth.currentUser}
+          - Auth UID: ${auth.currentUser?.uid}
+        `);
+      }
+    }
+    
+    return MAX_DAILY_MESSAGES; // Default to full amount if we can't check
+  }
+};

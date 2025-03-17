@@ -12,6 +12,7 @@ import Achievements from '@/components/Dashboard/Achievements';
 import { motion } from 'framer-motion';
 import PolkaDotBackground from '@/components/Common/BackgroundCustom/PolkadotBackground';
 import { getCharacterDotColor } from '@/components/Common/CharacterColor/CharacterColor';
+import ChatStats from '@/components/Chat/ChatStats';
 
 export default function Dashboard() {
   const { user, isLoading } = useAuthStore();
@@ -87,6 +88,12 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
+        
+        {/* Chat Stats for the selected companion */}
+        <ChatStats
+          companionId={selectedCompanion}
+          className="mt-6"
+        />
       </main>
     </div>
   );
