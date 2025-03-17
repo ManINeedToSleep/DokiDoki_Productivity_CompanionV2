@@ -31,6 +31,25 @@ export default function CharacterProgression({ userData }: CharacterProgressionP
   // Calculate progress to next level (0-100)
   const affinityProgress = companion?.affinityLevel ? (companion.affinityLevel % 100) : 0;
   
+  // Get friendship status based on affinity level
+  const getFriendshipStatus = (level: number): string => {
+    switch(level) {
+      case 1: return "Acquaintance";
+      case 2: return "Classmate";
+      case 3: return "Buddy";
+      case 4: return "Good Friend";
+      case 5: return "Close Friend";
+      case 6: return "Best Friend";
+      case 7: return "Trusted Confidant";
+      case 8: return "Soul Friend";
+      case 9: return "Lifelong Friend";
+      case 10: return "Inseparable Friends";
+      default: return "Acquaintance";
+    }
+  };
+  
+  const friendshipStatus = getFriendshipStatus(affinityLevel);
+  
   // Format last interaction time
   const lastInteraction = companion?.lastInteraction?.toDate();
   const formattedLastInteraction = lastInteraction 
@@ -103,10 +122,22 @@ export default function CharacterProgression({ userData }: CharacterProgressionP
             </span>
           </div>
           
+          {/* Friendship status */}
+          <div className="mb-3 text-center">
+            <span className="px-3 py-1 rounded-full text-sm font-[Halogen]" style={{
+              backgroundColor: colors.primary,
+              color: 'white'
+            }}>
+              {friendshipStatus}
+            </span>
+          </div>
+          
           <div className="mb-2">
             <div className="flex justify-between items-center mb-1">
               <span className="text-xs text-gray-700 font-[Halogen]">Affinity Level {affinityLevel}</span>
-              <span className="text-xs text-gray-700 font-[Halogen]">{affinityProgress}%</span>
+              <span className="text-xs text-gray-700 font-[Halogen]">
+                {affinityLevel < 10 ? `${affinityProgress}/100 to Level ${affinityLevel + 1}` : 'Max Level!'}
+              </span>
             </div>
             <div className="relative h-2 bg-gray-200 rounded-full overflow-hidden">
               <div 
