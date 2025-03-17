@@ -140,10 +140,10 @@ export const ACHIEVEMENTS = {
     sayori_friend: {
       id: 'sayori_friend',
       title: 'Sayori\'s Friend',
-      description: 'Reach affinity level 10 with Sayori',
+      description: 'Reach affinity Level 1 with Sayori',
       icon: '💕',
       type: 'companion',
-      requirement: { type: 'affinity', value: 10 },
+      requirement: { type: 'affinity', value: 1 },
       reward: {
         type: 'sprite',
         id: 'sayori_casual',
@@ -153,10 +153,10 @@ export const ACHIEVEMENTS = {
     sayori_bestie: {
       id: 'sayori_bestie',
       title: 'Sayori\'s Best Friend',
-      description: 'Reach affinity level 50 with Sayori',
+      description: 'Reach affinity Level 5 with Sayori',
       icon: '💖',
       type: 'companion',
-      requirement: { type: 'affinity', value: 50 },
+      requirement: { type: 'affinity', value: 5 },
       reward: {
         type: 'sprite',
         id: 'sayori_special',
@@ -166,10 +166,10 @@ export const ACHIEVEMENTS = {
     natsuki_friend: {
       id: 'natsuki_friend',
       title: 'Natsuki\'s Friend',
-      description: 'Reach affinity level 10 with Natsuki',
+      description: 'Reach affinity Level 1 with Natsuki',
       icon: '💝',
       type: 'companion',
-      requirement: { type: 'affinity', value: 10 },
+      requirement: { type: 'affinity', value: 1 },
       reward: {
         type: 'sprite',
         id: 'natsuki_casual',
@@ -179,10 +179,10 @@ export const ACHIEVEMENTS = {
     natsuki_bestie: {
       id: 'natsuki_bestie',
       title: 'Natsuki\'s Best Friend',
-      description: 'Reach affinity level 50 with Natsuki',
+      description: 'Reach affinity Level 5 with Natsuki',
       icon: '💘',
       type: 'companion',
-      requirement: { type: 'affinity', value: 50 },
+      requirement: { type: 'affinity', value: 5 },
       reward: {
         type: 'sprite',
         id: 'natsuki_special',
@@ -192,10 +192,10 @@ export const ACHIEVEMENTS = {
     yuri_friend: {
       id: 'yuri_friend',
       title: 'Yuri\'s Friend',
-      description: 'Reach affinity level 10 with Yuri',
+      description: 'Reach affinity Level 1 with Yuri',
       icon: '💜',
       type: 'companion',
-      requirement: { type: 'affinity', value: 10 },
+      requirement: { type: 'affinity', value: 1 },
       reward: {
         type: 'sprite',
         id: 'yuri_casual',
@@ -205,10 +205,10 @@ export const ACHIEVEMENTS = {
     yuri_bestie: {
       id: 'yuri_bestie',
       title: 'Yuri\'s Best Friend',
-      description: 'Reach affinity level 50 with Yuri',
-      icon: '💞',
+      description: 'Reach affinity Level 5 with Yuri',
+      icon: '💟',
       type: 'companion',
-      requirement: { type: 'affinity', value: 50 },
+      requirement: { type: 'affinity', value: 5 },
       reward: {
         type: 'sprite',
         id: 'yuri_special',
@@ -218,10 +218,10 @@ export const ACHIEVEMENTS = {
     monika_friend: {
       id: 'monika_friend',
       title: 'Monika\'s Friend',
-      description: 'Reach affinity level 10 with Monika',
+      description: 'Reach affinity Level 1 with Monika',
       icon: '💚',
       type: 'companion',
-      requirement: { type: 'affinity', value: 10 },
+      requirement: { type: 'affinity', value: 1 },
       reward: {
         type: 'sprite',
         id: 'monika_casual',
@@ -231,10 +231,23 @@ export const ACHIEVEMENTS = {
     monika_bestie: {
       id: 'monika_bestie',
       title: 'Monika\'s Best Friend',
-      description: 'Reach affinity level 50 with Monika',
-      icon: '💓',
+      description: 'Reach affinity Level 5 with Monika',
+      icon: '💞',
       type: 'companion',
-      requirement: { type: 'affinity', value: 50 },
+      requirement: { type: 'affinity', value: 5 },
+      reward: {
+        type: 'sprite',
+        id: 'monika_special',
+        description: 'Unlocks Monika\'s special outfit'
+      }
+    },
+    just_monika: {
+      id: 'just_monika',
+      title: 'Just Monika',
+      description: 'Reach maximum affinity Level 10 with Monika',
+      icon: '🌟',
+      type: 'companion',
+      requirement: { type: 'affinity', value: 10 },
       reward: {
         type: 'sprite',
         id: 'monika_special',
@@ -244,7 +257,7 @@ export const ACHIEVEMENTS = {
     companion_collector: {
       id: 'companion_collector',
       title: 'Friend to All',
-      description: 'Reach affinity level 10 with all companions',
+      description: 'Reach at least affinity Level 1 with all companions',
       icon: '🌟',
       type: 'companion',
       requirement: { type: 'special', value: 0 },
@@ -379,8 +392,8 @@ export const ACHIEVEMENTS = {
         description: 'Unlocks the ability to share poems with your companion'
       }
     },
-    just_monika: {
-      id: 'just_monika',
+    monika_secret: {
+      id: 'monika_secret',
       title: '???',
       description: 'Discovered by those who truly understand',
       icon: '👁️',
@@ -573,32 +586,39 @@ export const checkCompanionAchievements = async (
   affinityLevel: number,
   allCompanionsData?: Record<CompanionId, { affinityLevel: number }>
 ): Promise<void> => {
-  // Friend level achievement
+  // Calculate the companion level from affinity points
+  const companionLevel = Math.min(10, Math.floor(affinityLevel / 100) + 1);
+  console.log(`Checking achievements for ${companionId} with affinity ${affinityLevel} (Level ${companionLevel})`);
+  
+  // Friend level achievement - Level 1 (0-99 affinity points)
   const friendAchievementId = `${companionId}_friend`;
-  if (affinityLevel >= 10) {
+  if (companionLevel >= 1) {
     await unlockAchievement(uid, friendAchievementId);
   }
   
-  // Best friend level achievement
+  // Best friend level achievement - Level 5 (400-499 affinity points)
   const bestieAchievementId = `${companionId}_bestie`;
-  if (affinityLevel >= 50) {
+  if (companionLevel >= 5) {
     await unlockAchievement(uid, bestieAchievementId);
   }
   
   // Check for "Friend to All" achievement if we have data for all companions
   if (allCompanionsData) {
     const allCompanions: CompanionId[] = ['sayori', 'natsuki', 'yuri', 'monika'];
-    const allAtLeastLevel10 = allCompanions.every(id => 
-      allCompanionsData[id] && allCompanionsData[id].affinityLevel >= 10
-    );
+    const allAtLeastLevel1 = allCompanions.every(id => {
+      if (!allCompanionsData[id]) return false;
+      const level = Math.min(10, Math.floor(allCompanionsData[id].affinityLevel / 100) + 1);
+      return level >= 1;
+    });
     
-    if (allAtLeastLevel10) {
+    if (allAtLeastLevel1) {
       await unlockAchievement(uid, 'companion_collector');
     }
   }
   
-  // Special hidden achievement for Monika
-  if (companionId === 'monika' && affinityLevel >= 100) {
+  // Special achievement for Monika at max level
+  // This uses the companion achievement 'just_monika', not the hidden 'monika_secret'
+  if (companionId === 'monika' && companionLevel >= 10) {
     await unlockAchievement(uid, 'just_monika');
   }
 };
@@ -648,31 +668,42 @@ export const checkTimeBasedAchievements = async (
   sessionStartTime: Date,
   sessionMinutes: number
 ): Promise<void> => {
-  console.log(`🏆 Checking time-based achievements with ${sessionMinutes} minutes at hour ${sessionStartTime.getHours()}`);
+  const currentHour = sessionStartTime.getHours();
   
-  const hour = sessionStartTime.getHours();
-  const day = sessionStartTime.getDay(); // 0 = Sunday, 6 = Saturday
-  const isWeekend = day === 0 || day === 6;
-  
-  // Night Owl (2 hours between 00:00 and 05:00)
-  if (hour >= 0 && hour < 5 && sessionMinutes >= 120) {
-    await unlockAchievement(uid, 'night_owl');
-  }
-  
-  // Early Bird (any session before 7 AM)
-  if (hour < 7 && sessionMinutes >= 1) {
+  // Check for early bird achievement (before 7 AM)
+  if (currentHour < 7) {
+    console.log(`🏆 "Early Bird" criteria met (session started at ${currentHour}:00)`);
     await unlockAchievement(uid, 'early_bird');
   }
   
-  // Weekend Warrior (4 hours on weekend)
+  // Check for night owl achievement (after midnight, at least 2 hours)
+  if (currentHour >= 0 && currentHour < 5 && sessionMinutes >= 120) {
+    console.log(`🏆 "Night Owl" criteria met (session at ${currentHour}:00 for ${sessionMinutes} minutes)`);
+    await unlockAchievement(uid, 'night_owl');
+  }
+  
+  // Check if it's a weekend
+  const dayOfWeek = sessionStartTime.getDay();
+  const isWeekend = dayOfWeek === 0 || dayOfWeek === 6; // 0 is Sunday, 6 is Saturday
+  
   if (isWeekend && sessionMinutes >= 240) {
+    console.log(`🏆 "Weekend Warrior" criteria met (${sessionMinutes} minutes on a weekend)`);
     await unlockAchievement(uid, 'weekend_warrior');
   }
   
-  // Holiday Hero
-  const isHoliday = checkIfHoliday(sessionStartTime);
-  if (isHoliday && sessionMinutes >= 30) {
+  // Check if it's a holiday
+  if (checkIfHoliday(sessionStartTime)) {
+    console.log(`🏆 "Holiday Hero" criteria met (session on a holiday)`);
     await unlockAchievement(uid, 'holiday_hero');
+  }
+  
+  // Special hidden Monika achievement - renamed from just_monika to monika_secret
+  const specialDate = new Date();
+  const isSpecialDay = specialDate.getDate() === 22 && specialDate.getMonth() === 8; // September 22
+  
+  if (isSpecialDay) {
+    console.log('🏆 Special hidden achievement criteria met');
+    await unlockAchievement(uid, 'monika_secret');
   }
 };
 

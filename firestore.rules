@@ -1,0 +1,45 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
+    // User document rules
+    match /users/{userId} {
+      allow read, update, create: if isSignedIn() && isOwner(userId);
+      allow delete: if false;
+      
+      // Add rules for subcollections
+      match /goals/{goalId} {
+        allow read, write: if isSignedIn() && isOwner(userId);
+      }
+      
+      match /sessions/{sessionId} {
+        allow read, write: if isSignedIn() && isOwner(userId);
+      }
+      
+      // Update rules for chats subcollection (structured as a nested collection)
+      match /chats/{chatId} {
+        allow read, write: if isSignedIn() && isOwner(userId);
+      }
+    }
+    
+    // Public companion dialogue (read-only)
+    match /companionDialogue/{dialogueId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+    
+    // Achievements collection (Ensure users can read/write their own achievements)
+    match /achievements/{userId} {
+      allow read, update, create: if isSignedIn() && isOwner(userId);
+      allow delete: if false;
+    }
+  }
+} 
