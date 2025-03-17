@@ -10,7 +10,6 @@ import Goals from '@/components/Dashboard/Goals';
 import CharacterProgression from '@/components/Dashboard/CharacterProgression';
 import Achievements from '@/components/Dashboard/Achievements';
 import { motion } from 'framer-motion';
-import { CompanionId } from '@/lib/firebase/companion';
 import PolkaDotBackground from '@/components/Common/BackgroundCustom/PolkadotBackground';
 import { getCharacterDotColor } from '@/components/Common/CharacterColor/CharacterColor';
 

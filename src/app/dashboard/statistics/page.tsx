@@ -9,7 +9,7 @@ import { motion } from 'framer-motion';
 import PolkaDotBackground from '@/components/Common/BackgroundCustom/PolkadotBackground';
 import { getCharacterDotColor, getCharacterColors } from '@/components/Common/CharacterColor/CharacterColor';
 
-// Import our statistics components
+// Import statistics components
 import StatMetric from '@/components/Statistics/StatMetric';
 import ActivityCalendar from '@/components/Statistics/ActivityCalendar';
 import FocusTrendChart from '@/components/Statistics/FocusTrendChart';
