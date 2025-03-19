@@ -10,13 +10,13 @@ import {
   limit, 
   doc, 
   updateDoc, 
-  serverTimestamp,
   getDoc,
   increment,
   setDoc
 } from 'firebase/firestore';
 import { updateUserLastActive } from './user';
 import { auth } from '@/lib/firebase';
+import { encode } from 'gpt-tokenizer';
 
 // Add a simple in-memory cache to prevent duplicate message processing
 // This is a basic solution - in a production app you might use a more robust solution
@@ -47,6 +47,75 @@ const MAX_CHAT_HISTORY = 50;
 
 // Maximum messages per day
 export const MAX_DAILY_MESSAGES = 50;
+
+// Constants for token management
+const MAX_DAILY_TOKENS = 20000; // Per user daily limit
+
+interface TokenUsage {
+  dailyTokens: number;
+  lastResetDate: Date;
+}
+
+// Helper function to count tokens
+function countTokens(text: string): number {
+  return encode(text).length;
+}
+
+// Function to check and update token usage
+async function checkTokenUsage(userId: string): Promise<boolean> {
+  try {
+    const usageRef = doc(db, 'users', userId, 'stats', 'tokenUsage');
+    const usageDoc = await getDoc(usageRef);
+    
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    
+    // Initialize token usage if it doesn't exist
+    if (!usageDoc.exists()) {
+      await setDoc(usageRef, {
+        dailyTokens: 0,
+        lastResetDate: today
+      });
+      return true;
+    }
+    
+    const usage = usageDoc.data() as TokenUsage;
+    const lastReset = new Date(usage.lastResetDate);
+    
+    // Reset daily tokens if it's a new day
+    if (lastReset.getTime() < today.getTime()) {
+      await setDoc(usageRef, {
+        dailyTokens: 0,
+        lastResetDate: today
+      });
+      return true;
+    }
+    
+    // Check if user has exceeded daily token limit
+    if (usage.dailyTokens >= MAX_DAILY_TOKENS) {
+      return false;
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('Error checking token usage:', error);
+    // If we can't check token usage, allow the request to proceed
+    return true;
+  }
+}
+
+// Function to update token usage
+async function updateTokenUsage(userId: string, tokens: number): Promise<void> {
+  try {
+    const usageRef = doc(db, 'users', userId, 'stats', 'tokenUsage');
+    await updateDoc(usageRef, {
+      dailyTokens: increment(tokens)
+    });
+  } catch (error) {
+    console.error('Error updating token usage:', error);
+    // Don't throw the error, just log it
+  }
+}
 
 /**
  * Add a new chat message to the database
@@ -169,6 +238,13 @@ export const addChatMessage = async (
     console.log('⏱️ Chat.ts: Updating user last active time');
     await updateUserLastActive(userId);
     
+    // Check token usage
+    console.log('📊 Chat.ts: Checking token usage');
+    const canUseTokens = await checkTokenUsage(userId);
+    if (!canUseTokens) {
+      throw new Error('Daily token limit reached');
+    }
+    
     // Add message to the chat collection
     console.log('💬 Chat.ts: Adding message to Firestore');
     const chatCollection = collection(db, 'users', userId, 'chats');
@@ -178,6 +254,10 @@ export const addChatMessage = async (
       timestamp: message.timestamp,
       companionId: companionId,
     });
+    
+    // Update token usage
+    const messageTokens = countTokens(message.content);
+    await updateTokenUsage(userId, messageTokens);
     
     console.log('✅ Chat.ts: Message added successfully');
     

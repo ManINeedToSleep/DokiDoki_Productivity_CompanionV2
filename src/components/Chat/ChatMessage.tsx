@@ -1,15 +1,9 @@
 "use client";
 
 import { CompanionId } from '@/lib/firebase/companion';
-import { Timestamp } from '@/lib/firebase';
-
-export interface ChatMessageType {
-  id: string;
-  sender: 'user' | 'companion';
-  content: string;
-  timestamp: Timestamp;
-  companionId: CompanionId;
-}
+import { Timestamp } from 'firebase/firestore';
+import { getCharacterColors } from '@/components/Common/CharacterColor/CharacterColor';
+import { ChatMessage as ChatMessageType } from '@/lib/stores/chatStore';
 
 interface ChatMessageProps {
   message: ChatMessageType;
@@ -17,15 +11,7 @@ interface ChatMessageProps {
 }
 
 export default function ChatMessage({ message, companionId }: ChatMessageProps) {
-  const getCharacterColor = (id: CompanionId): string => {
-    switch (id) {
-      case 'sayori': return '#FF9ED2';
-      case 'natsuki': return '#FF8DA1';
-      case 'yuri': return '#A49EFF';
-      case 'monika': return '#85CD9E';
-      default: return '#FF9ED2';
-    }
-  };
+  const colors = getCharacterColors(companionId);
   
   const getCharacterFont = (id: CompanionId): string => {
     switch (id) {
@@ -38,33 +24,63 @@ export default function ChatMessage({ message, companionId }: ChatMessageProps) 
   };
   
   const isCompanion = message.sender === 'companion';
-  const color = getCharacterColor(companionId);
   const font = getCharacterFont(companionId);
   
   // Format timestamp
-  const formatTime = (timestamp: Timestamp) => {
-    const date = timestamp.toDate();
-    return new Intl.DateTimeFormat('en-US', {
-      hour: 'numeric',
-      minute: 'numeric',
-      hour12: true
-    }).format(date);
+  const formatTime = (timestamp: Timestamp | null) => {
+    try {
+      if (!timestamp) {
+        return '';
+      }
+
+      // Ensure we have a valid Timestamp object
+      const validTimestamp = timestamp instanceof Timestamp 
+        ? timestamp 
+        : Timestamp.fromDate(new Date(timestamp));
+
+      // Get the date object
+      const date = validTimestamp.toDate();
+
+      // Validate the date
+      if (isNaN(date.getTime())) {
+        console.error('Invalid date from timestamp:', timestamp);
+        return '';
+      }
+
+      return new Intl.DateTimeFormat('en-US', {
+        hour: 'numeric',
+        minute: 'numeric',
+        hour12: true
+      }).format(date);
+    } catch (error) {
+      console.error('Error formatting timestamp:', error);
+      return '';
+    }
   };
   
   return (
-    <div className={`mb-4 flex ${isCompanion ? 'justify-start' : 'justify-end'}`}>
+    <div className={`mb-2 flex ${isCompanion ? 'justify-start' : 'justify-end'}`}>
       <div 
-        className={`max-w-[80%] rounded-lg p-3 shadow-sm ${
+        className={`max-w-[80%] rounded-lg p-2.5 shadow-sm border-l-4 ${
           isCompanion 
-            ? `bg-white border-l-4 ${font}`
+            ? `${font}`
             : 'bg-gray-100 text-gray-800'
         }`}
         style={{ 
-          borderColor: isCompanion ? color : undefined,
+          borderColor: isCompanion ? colors.primary : 'transparent',
+          backgroundColor: isCompanion ? colors.secondary : undefined,
+          color: isCompanion ? colors.text : undefined
         }}
       >
-        <div className="text-sm md:text-base">{message.content}</div>
-        <div className="text-xs text-gray-500 mt-1 text-right">{formatTime(message.timestamp)}</div>
+        <div className="text-sm whitespace-pre-wrap break-words">{message.content}</div>
+        <div 
+          className={`text-[10px] mt-1 text-right ${
+            isCompanion ? 'text-opacity-75' : 'text-gray-500'
+          }`} 
+          style={{ color: isCompanion ? colors.text : undefined }}
+        >
+          {formatTime(message.timestamp)}
+        </div>
       </div>
     </div>
   );

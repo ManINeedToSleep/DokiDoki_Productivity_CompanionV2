@@ -15,6 +15,25 @@ const MAX_CONTEXT_TOKENS = 4000;
 // Maximum messages to include in context
 const MAX_CONTEXT_MESSAGES = 20;
 
+// Add type definitions at the top
+interface CompanionPersonality {
+  traits: string[];
+  interests: string[];
+  motivationStyle: string;
+  speakingStyle: string;
+}
+
+interface OpenAIError extends Error {
+  response?: {
+    status: number;
+    data?: {
+      error?: {
+        message?: string;
+      };
+    };
+  };
+}
+
 // Get estimated token count for a message (rough approximation)
 const estimateTokens = (text: string): number => {
   // GPT tokens are roughly 4 characters per token
@@ -22,9 +41,8 @@ const estimateTokens = (text: string): number => {
 };
 
 // Get character personality details
-const getCharacterPersonality = (companionId: CompanionId) => {
-  // These match the definitions in companion.ts
-  const personalities: Record<CompanionId, any> = {
+const getCharacterPersonality = (companionId: CompanionId): CompanionPersonality => {
+  const personalities: Record<CompanionId, CompanionPersonality> = {
     sayori: {
       traits: ['cheerful', 'energetic', 'caring', 'optimistic', 'scatterbrained'],
       interests: ['poetry', 'friends', 'food', 'sunny days', 'helping others'],
@@ -84,6 +102,14 @@ const createSystemPrompt = (
   const responseStyle = relationshipTier >= 5 ? 
     'Your responses can be fairly detailed (2-3 paragraphs when appropriate).' : 
     'Keep your responses relatively concise (1-2 paragraphs maximum).';
+
+  // Get current time
+  const now = new Date();
+  const timeString = now.toLocaleTimeString('en-US', { 
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true 
+  });
   
   // Create the system prompt
   return `You are ${name} from Doki Doki Literature Club, acting as a productivity companion for ${userName}. ${relationship}
@@ -91,6 +117,8 @@ const createSystemPrompt = (
 PERSONALITY TRAITS: ${personality.traits.join(', ')}
 INTERESTS: ${personality.interests.join(', ')}
 SPEAKING STYLE: ${personality.speakingStyle}
+
+CURRENT TIME: ${timeString}
 
 IMPORTANT RULES:
 1. Always stay in character as ${name}.
@@ -103,12 +131,13 @@ IMPORTANT RULES:
 8. Remember the user's information to personalize interactions.
 9. The user's current focus stats: ${userData.focusStats.totalFocusTime/60} minutes total focus time, ${userData.focusStats.dailyStreak} day streak.
 10. The user has completed ${userData.goals?.completedGoals || 0} goals.
+11. You can reference the current time (${timeString}) naturally in conversation.
 
 Your purpose is to help the user be more productive, provide encouragement, and be a friendly companion during their work/study sessions.`;
 };
 
 // Fallback response function when API fails
-function getFallbackResponse(companionId: CompanionId, userMessage: string): string {
+function getFallbackResponse(companionId: CompanionId): string {
   // This is similar to the placeholder responses from the original code
   const responses: Record<CompanionId, string[]> = {
     sayori: [
@@ -152,7 +181,11 @@ export async function POST(request: NextRequest) {
       companionId, 
       userMessage, 
       chatHistory, 
-      userData 
+      userData,
+      personality,
+      contextTokens,
+      emotion,
+      modifiers
     } = body;
     
     // Validate required fields
@@ -172,13 +205,22 @@ export async function POST(request: NextRequest) {
     
     // Prepare messages for API call
     const messages: ChatCompletionMessageParam[] = [
-      { role: "system", content: systemPrompt },
+      { 
+        role: "system", 
+        content: `${systemPrompt}
+
+CURRENT EMOTIONAL STATE: ${emotion}
+PERSONALITY MODIFIERS: ${JSON.stringify(modifiers)}
+CHARACTER PERSONALITY: ${JSON.stringify(personality)}
+
+Remember to maintain character consistency and emotional state throughout the response.`
+      },
     ];
     
     // Add chat history, starting from most recent and going back
     // until we hit token limit or max messages
     let tokenCount = estimateTokens(systemPrompt);
-    let historyMessages: ChatCompletionMessageParam[] = [];
+    const historyMessages: ChatCompletionMessageParam[] = [];
     
     // Reverse to get from oldest to newest, then we'll reverse back
     const reversedHistory = [...chatHistory].reverse();
@@ -203,40 +245,45 @@ export async function POST(request: NextRequest) {
     // Add current user message
     messages.push({ role: "user", content: userMessage });
     
-    console.log(`Sending prompt to OpenAI with ${messages.length} messages`);
+    console.log(`Sending prompt to OpenAI with ${messages.length} messages and ${contextTokens} tokens`);
     
-    // Make API call
+    // Make API call with adjusted parameters based on personality
     const response = await openai.chat.completions.create({
       model: "gpt-3.5-turbo",
       messages: messages,
-      temperature: 0.8,
+      temperature: personality.traits.includes('analytical') ? 0.7 : 0.8,
       max_tokens: 500,
       top_p: 1,
-      frequency_penalty: 0.5,
-      presence_penalty: 0.5,
+      frequency_penalty: personality.traits.includes('talkative') ? 0.3 : 0.5,
+      presence_penalty: personality.traits.includes('focused') ? 0.7 : 0.5,
     });
     
-    const aiResponse = response.choices[0]?.message?.content || getFallbackResponse(companionId, userMessage);
+    const aiResponse = response.choices[0]?.message?.content || getFallbackResponse(companionId);
     
     return NextResponse.json({ response: aiResponse });
     
-  } catch (error: any) {
+  } catch (error) {
     console.error("Error calling OpenAI:", error);
     
+    // Type guard for OpenAI error
+    const isOpenAIError = (err: unknown): err is OpenAIError => {
+      return err instanceof Error && 'response' in err;
+    };
+    
     // Check if it's a moderation flag issue
-    if (error.response?.status === 400 && error.response?.data?.error?.message?.includes('flagged')) {
+    if (isOpenAIError(error) && error.response?.status === 400 && 
+        error.response?.data?.error?.message?.includes('flagged')) {
       return NextResponse.json({ 
         response: "I don't think we should talk about that. Let's focus on something more productive!" 
       });
     }
     
     // Use fallback for any errors
-    const companionId = (await request.json()).companionId || 'sayori';
-    const userMessage = (await request.json()).userMessage || '';
+    const { companionId = 'sayori' } = await request.json().catch(() => ({}));
     
     return NextResponse.json({ 
-      response: getFallbackResponse(companionId, userMessage),
-      error: error.message
+      response: getFallbackResponse(companionId),
+      error: error instanceof Error ? error.message : 'Unknown error occurred'
     });
   }
 } 

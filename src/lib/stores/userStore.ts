@@ -751,15 +751,11 @@ export function useSyncUserData() {
 
 // This is in the useUserData hook
 export function useUserData() {
-  const { user, isLoading, error, syncWithFirebase, refreshUserData } = useUserStore(
-    (state) => ({
-      user: state.user,
-      isLoading: state.isLoading,
-      error: state.error,
-      syncWithFirebase: state.syncWithFirebase,
-      refreshUserData: state.refreshUserData
-    })
-  );
+  const user = useUserStore((state) => state.user);
+  const isLoading = useUserStore((state) => state.isLoading);
+  const error = useUserStore((state) => state.error);
+  const syncWithFirebase = useUserStore((state) => state.syncWithFirebase);
+  const refreshUserData = useUserStore((state) => state.refreshUserData);
 
   // Subscribe to auth state changes and sync user data
   useEffect(() => {
@@ -791,7 +787,7 @@ export function useUserData() {
     });
 
     return () => unsubscribe();
-  }, [syncWithFirebase, refreshUserData]);
+  }, [syncWithFirebase]);
 
   return { userData: user, loading: isLoading, error, refreshUserData };
 } 

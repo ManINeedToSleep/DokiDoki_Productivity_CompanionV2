@@ -3,6 +3,7 @@
 import { FormEvent, ChangeEvent } from 'react';
 import { CompanionId } from '@/lib/firebase/companion';
 import Button from '@/components/Common/Button/Button';
+import { getInputColors } from '@/components/Common/CharacterColor/CharacterColor';
 
 interface ChatInputProps {
   value: string;
@@ -33,6 +34,8 @@ export default function ChatInput({
       default: return "Type your message...";
     }
   };
+
+  const inputColors = getInputColors(companionId);
   
   return (
     <form onSubmit={handleSubmit} className="flex items-center gap-2">
@@ -41,7 +44,14 @@ export default function ChatInput({
         value={value}
         onChange={onChange}
         placeholder={getPlaceholder(companionId)}
-        className="flex-1 p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-200"
+        className={`flex-1 p-3 rounded-lg focus:outline-none transition-all duration-200 placeholder-${inputColors.placeholder}`}
+        style={{
+          backgroundColor: inputColors.bg,
+          borderColor: inputColors.border,
+          borderWidth: '2px',
+          color: inputColors.focus,
+          caretColor: inputColors.focus
+        }}
         disabled={isLoading}
       />
       

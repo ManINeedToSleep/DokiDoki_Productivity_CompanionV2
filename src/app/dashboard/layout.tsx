@@ -4,7 +4,7 @@ import { ReactNode } from 'react';
 import ProtectedRoute from '@/components/Common/Auth/ProtectedRoute';
 import { useSyncAllData } from '@/lib/stores';
 import Navbar from '@/components/Common/Navbar/Navbar';
-import AuthRefresher from '@/components/AuthRefresher';
+import AuthRefresher from '@/components/Common/Auth/AuthRefresher';
 
 // Add styles for scrollbar hiding
 const scrollbarHidingStyles = `

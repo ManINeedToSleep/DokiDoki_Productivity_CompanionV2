@@ -24,24 +24,44 @@ service cloud.firestore {
         allow read, write: if isSignedIn() && isOwner(userId);
       }
       
-      // Update rules for chats subcollection (structured as a nested collection)
+      // Enhanced debugging for chats subcollection
       match /chats/{chatId} {
-        allow read, write: if isSignedIn() && isOwner(userId);
+        allow read, write, create, update, delete: if isSignedIn() && isOwner(userId);
       }
       
-      // Rules for settings subcollection
+      // Enhanced debugging for settings subcollection
       match /settings/{settingId} {
-        allow read, write: if isSignedIn() && isOwner(userId);
+        allow read, write, create, update, delete: if isSignedIn() && isOwner(userId);
+      }
+      
+      // Direct path for chatUsage document
+      match /settings/chatUsage {
+        allow read, write, create, update: if isSignedIn() && isOwner(userId);
+      }
+
+      // Stats subcollection with token usage
+      match /stats/{statId} {
+        allow read, write, create, update: if isSignedIn() && isOwner(userId);
+      }
+      
+      // Allow access to ANY subcollection and their documents for the user
+      match /{collection}/{docId} {
+        allow read, write, create, update: if isSignedIn() && isOwner(userId);
       }
     }
     
-    // Public companion dialogue (read-only)
+    // Public companion dialogue (read-only) with nested access
     match /companionDialogue/{dialogueId} {
       allow read: if isSignedIn();
       allow write: if false;
+      
+      // Allow access to dialogue subcollections if they exist
+      match /{document=**} {
+        allow read: if isSignedIn();
+      }
     }
     
-    // Achievements collection (Ensure users can read/write their own achievements)
+    // Achievements collection
     match /achievements/{userId} {
       allow read, update, create: if isSignedIn() && isOwner(userId);
       allow delete: if false;
