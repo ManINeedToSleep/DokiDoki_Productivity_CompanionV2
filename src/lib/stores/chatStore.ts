@@ -1,11 +1,13 @@
 import { create } from 'zustand';
-import { persist, PersistOptions, StorageValue } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import { Timestamp } from 'firebase/firestore';
 import React from 'react';
 import { CompanionId } from '@/lib/firebase/companion';
 import { getCompanionResponse } from '@/lib/openai/chatService';
 import { ResponseCategory } from '@/lib/openai/responseRules';
 import { getUserDocument } from '@/lib/firebase/user';
+import { auth } from '@/lib/firebase';
+import { getChatHistory, addChatMessage } from '@/lib/firebase/chat';
 
 export interface ChatMessage {
   id: string;
@@ -27,13 +29,19 @@ interface PendingChatUpdate {
   };
 }
 
-interface ChatState {
+// Define the persisted state type
+interface PersistedState {
   messages: Record<CompanionId, ChatMessage[]>;
   pendingUpdates: PendingChatUpdate[];
+  lastSyncTime: number | null;
+  currentUserId: string | null;
+}
+
+interface ChatState extends PersistedState {
   isLoading: boolean;
   error: string | null;
-  lastSyncTime: number | null;
   isTyping: boolean;
+  isAuthReady: boolean;
   
   // Actions
   setMessages: (companionId: CompanionId, messages: ChatMessage[]) => void;
@@ -42,93 +50,63 @@ interface ChatState {
   setTyping: (isTyping: boolean) => void;
   syncWithFirebase: (uid: string, force?: boolean) => Promise<void>;
   refreshChatData: (uid: string, companionId: CompanionId) => Promise<void>;
+  loadUserChatHistory: (uid: string) => Promise<void>;
+  clearLocalState: () => void;
+  setAuthReady: (ready: boolean) => void;
 }
 
-type ChatStorePersist = Pick<ChatState, 'messages' | 'pendingUpdates' | 'lastSyncTime'>;
+// Initialize empty message record with all companions
+const initializeEmptyMessages = (): Record<CompanionId, ChatMessage[]> => ({
+  sayori: [],
+  natsuki: [],
+  yuri: [],
+  monika: []
+});
 
-type SerializedTimestamp = {
-  seconds: number;
-  nanoseconds: number;
-};
-
-type SerializedMessage = Omit<ChatMessage, 'timestamp'> & {
-  timestamp: SerializedTimestamp;
-};
-
-type SerializedMessages = Record<CompanionId, SerializedMessage[]>;
-
-// Custom storage with serialization
-const storage = {
-  getItem: (name: string): StorageValue<ChatStorePersist> | null => {
-    const str = localStorage.getItem(name);
-    if (!str) return null;
+// Custom storage implementation
+const customStorage = createJSONStorage<PersistedState>(() => ({
+  getItem: (name): string | null => {
+    const stored = localStorage.getItem(name);
+    if (!stored || !auth.currentUser) return null;
     
     try {
-      const parsed = JSON.parse(str);
-      // Convert timestamps back to Firestore Timestamps
-      if (parsed?.state?.messages) {
-        const messages = parsed.state.messages as SerializedMessages;
-        Object.values(messages).forEach(companionMessages => {
-          companionMessages.forEach(msg => {
-            if (msg.timestamp && typeof msg.timestamp.seconds === 'number') {
-              msg.timestamp = new Timestamp(msg.timestamp.seconds, msg.timestamp.nanoseconds);
-            }
-          });
-        });
+      const parsed = JSON.parse(stored);
+      // Verify the stored data belongs to current user
+      if (parsed?.state?.currentUserId !== auth.currentUser.uid) {
+        console.log(`⚠️ ChatStore: User ID mismatch in storage. Stored: ${parsed?.state?.currentUserId}, Current: ${auth.currentUser.uid}`);
+        localStorage.removeItem(name); // Remove mismatched data
+        return null;
       }
-      return parsed as StorageValue<ChatStorePersist>;
+      return stored;
     } catch {
       return null;
     }
   },
-  
-  setItem: (name: string, value: StorageValue<ChatStorePersist>): void => {
-    try {
-      const strValue = typeof value === 'string' ? value : JSON.stringify(value);
-      const parsed = JSON.parse(strValue);
-      // Convert Timestamps to serializable objects
-      if (parsed?.state?.messages) {
-        const messages = parsed.state.messages as Record<CompanionId, ChatMessage[]>;
-        Object.values(messages).forEach(companionMessages => {
-          companionMessages.forEach(msg => {
-            if (msg.timestamp instanceof Timestamp) {
-              (msg as unknown as SerializedMessage).timestamp = {
-                seconds: msg.timestamp.seconds,
-                nanoseconds: msg.timestamp.nanoseconds
-              };
-            }
-          });
-        });
-      }
-      localStorage.setItem(name, JSON.stringify(parsed));
-    } catch {
-      localStorage.setItem(name, typeof value === 'string' ? value : JSON.stringify(value));
+  setItem: (name, value): void => {
+    // Only persist if we have an authenticated user
+    if (auth.currentUser) {
+      localStorage.setItem(name, JSON.stringify(value));
     }
   },
-  
-  removeItem: (name: string): void => localStorage.removeItem(name)
-};
-
-// Persist configuration
-const persistConfig: PersistOptions<ChatState, ChatStorePersist> = {
-  name: 'chat-storage',
-  storage,
-  partialize: (state) => ({
-    messages: state.messages,
-    pendingUpdates: state.pendingUpdates,
-    lastSyncTime: state.lastSyncTime
-  })
-};
+  removeItem: (name): void => localStorage.removeItem(name)
+}));
 
 export const useChatStore = create<ChatState>()(
   persist(
     (set, get) => ({
-      messages: {} as Record<CompanionId, ChatMessage[]>,
+      // Persisted state
+      messages: initializeEmptyMessages(),
       pendingUpdates: [],
+      lastSyncTime: null,
+      currentUserId: null,
+      
+      // Non-persisted state
       isLoading: false,
       error: null,
-      lastSyncTime: null,
       isTyping: false,
+      isAuthReady: false,
+      
+      setAuthReady: (ready) => set({ isAuthReady: ready }),
       
       setMessages: (companionId, messages) => set(state => ({
         messages: {
@@ -144,7 +122,86 @@ export const useChatStore = create<ChatState>()(
       
       setTyping: (isTyping) => set({ isTyping }),
       
+      loadUserChatHistory: async (uid: string) => {
+        try {
+          set({ isLoading: true });
+          
+          // If user hasn't changed, just sync instead of full reload
+          if (get().currentUserId === uid) {
+            console.log(`🔄 ChatStore: Same user ${uid}, syncing instead of reloading`);
+            await get().syncWithFirebase(uid, true);
+            set({ isLoading: false });
+            return;
+          }
+          
+          console.log(`🔄 ChatStore: Loading chat history for new user ${uid}`);
+          
+          // Clear existing messages when user changes
+          set({ messages: initializeEmptyMessages() });
+          
+          // Get user data to check selected companion
+          const userData = await getUserDocument(uid);
+          if (!userData) {
+            throw new Error('User data not found');
+          }
+          
+          // Get selected companion
+          const selectedCompanion = userData.settings.selectedCompanion || 'sayori';
+          console.log(`👤 ChatStore: User's selected companion is ${selectedCompanion}`);
+          
+          // Load chat history for all companions
+          const companions: CompanionId[] = ['sayori', 'natsuki', 'yuri', 'monika'];
+          const allMessages = initializeEmptyMessages();
+          
+          // Load selected companion first
+          console.log(`📥 ChatStore: Loading ${selectedCompanion}'s chat history first`);
+          const selectedHistory = await getChatHistory(uid, selectedCompanion);
+          allMessages[selectedCompanion] = selectedHistory;
+          
+          // Load other companions in background
+          const otherCompanions = companions.filter(c => c !== selectedCompanion);
+          const loadPromises = otherCompanions.map(async companionId => {
+            console.log(`📥 ChatStore: Loading ${companionId}'s chat history`);
+            const history = await getChatHistory(uid, companionId);
+            allMessages[companionId] = history;
+          });
+          
+          await Promise.all(loadPromises);
+          
+          set({ 
+            messages: allMessages,
+            currentUserId: uid,
+            lastSyncTime: Date.now()
+          });
+          
+          console.log('✅ ChatStore: Successfully loaded all chat histories');
+        } catch (error) {
+          console.error('❌ ChatStore: Failed to load chat history:', error);
+          set({ error: error instanceof Error ? error.message : 'Failed to load chat history' });
+        } finally {
+          set({ isLoading: false });
+        }
+      },
+      
+      clearLocalState: () => {
+        console.log('🧹 ChatStore: Clearing local state');
+        set({
+          messages: initializeEmptyMessages(),
+          pendingUpdates: [],
+          lastSyncTime: null,
+          isTyping: false,
+          error: null,
+          currentUserId: null
+        });
+      },
+      
       addMessage: async (uid, companionId, content) => {
+        // Verify auth state
+        if (!auth.currentUser || auth.currentUser.uid !== uid) {
+          console.error('❌ ChatStore: Auth state mismatch, cannot add message');
+          return;
+        }
+        
         // Add user message
         const userMessage: ChatMessage = {
           id: `user_${Date.now()}`,
@@ -170,58 +227,102 @@ export const useChatStore = create<ChatState>()(
           ]
         }));
         
+        try {
+          // Save message to Firestore
+          console.log('💾 ChatStore: Saving user message to Firestore');
+          await addChatMessage(uid, companionId, userMessage);
+        } catch (error) {
+          console.error('❌ ChatStore: Error saving message to Firestore:', error);
+        }
+        
         // Get companion response
         const { getResponse } = get();
         await getResponse(uid, companionId, [...(get().messages[companionId] || []), userMessage]);
       },
       
       getResponse: async (uid: string, companionId: CompanionId, messageHistory: ChatMessage[]) => {
+        // Verify auth state
+        if (!auth.currentUser || auth.currentUser.uid !== uid) {
+          console.error('❌ ChatStore: Auth state mismatch, cannot get response');
+          return;
+        }
+        
+        // Check if we're already processing a response to prevent duplicates
+        if (get().isTyping) {
+          console.log('⚠️ ChatStore: Already processing a response, preventing duplicate');
+          return;
+        }
+        
         set({ isTyping: true });
         
         try {
-          // Get response from companion
           const userData = await getUserDocument(uid);
           if (!userData) {
             throw new Error('User data not found');
           }
           
-          // Filter out any template-like responses from history
+          // Filter out template responses
           const filteredHistory = messageHistory.filter(msg => {
             if (msg.sender === 'companion') {
-              // Check for template patterns
-              const isTemplate = msg.content.includes('Oh, ehehe~ Sorry for repeating myself') ||
-                               msg.content.includes('[current time]') ||
-                               msg.content.includes('Let me check the time for you');
+              const isTemplate = msg.content.includes('Oh, ehehe~ Sorry for repeating myself');
               return !isTemplate;
             }
             return true;
           });
           
+          // Make sure we have a valid user message to respond to
+          const lastMessage = filteredHistory[filteredHistory.length - 1];
+          if (!lastMessage || lastMessage.sender !== 'user') {
+            console.log('⚠️ ChatStore: No valid user message to respond to');
+            set({ isTyping: false });
+            return;
+          }
+          
+          // Get current timestamp to ensure we don't process this user message twice
+          const requestTime = Date.now();
+          const messageId = `response_to_${lastMessage.id}_${requestTime}`;
+          
+          // Get the AI response
           const response = await getCompanionResponse(
             companionId,
-            filteredHistory.length > 0 ? filteredHistory[filteredHistory.length - 1].content : '',
+            lastMessage.content,
             filteredHistory,
             userData
           );
           
-          // Add companion response
-          set(state => {
-            return {
-              messages: {
-                ...state.messages,
-                [companionId]: [...(state.messages[companionId] || []), {
-                  id: `companion_${Date.now()}`,
-                  content: response,
-                  sender: 'companion',
-                  timestamp: Timestamp.now(),
-                  companionId
-                }]
-              },
-              isTyping: false
-            };
-          });
+          // Create companion message with the unique ID
+          const companionMessage: ChatMessage = {
+            id: messageId,
+            content: response,
+            sender: 'companion',
+            timestamp: Timestamp.now(),
+            companionId
+          };
+          
+          // Update local state - check if we've been interrupted
+          if (!get().isTyping) {
+            console.log('⚠️ ChatStore: Response was interrupted, not updating state');
+            return;
+          }
+          
+          // Update local state with the response
+          set(state => ({
+            messages: {
+              ...state.messages,
+              [companionId]: [...(state.messages[companionId] || []), companionMessage]
+            },
+            isTyping: false
+          }));
+          
+          try {
+            // Save companion message to Firestore
+            console.log('💾 ChatStore: Saving companion response to Firestore');
+            await addChatMessage(uid, companionId, companionMessage);
+          } catch (error) {
+            console.error('❌ ChatStore: Error saving companion response to Firestore:', error);
+          }
         } catch (error) {
-          console.error('Error getting companion response:', error);
+          console.error('❌ ChatStore: Error getting companion response:', error);
           set({ 
             error: error instanceof Error ? error.message : 'Error getting response',
             isTyping: false
@@ -230,30 +331,106 @@ export const useChatStore = create<ChatState>()(
       },
       
       syncWithFirebase: async (uid, force = false) => {
-        const state = get();
-        
-        // Check if we need to sync
-        const now = Date.now();
-        if (!force && state.lastSyncTime && (now - state.lastSyncTime < 5 * 60 * 1000)) {
+        // Verify auth state
+        if (!auth.currentUser || auth.currentUser.uid !== uid) {
+          console.log('❌ ChatStore: Auth state mismatch, clearing local state');
+          get().clearLocalState();
           return;
         }
         
-        set({ lastSyncTime: now });
+        const state = get();
+        
+        // Check if we need to sync - increase from 1 minute to 3 minutes
+        const now = Date.now();
+        if (!force && state.lastSyncTime && (now - state.lastSyncTime < 3 * 60 * 1000)) {
+          console.log(`🔄 ChatStore: Skipping sync, last sync was ${Math.floor((now - state.lastSyncTime) / 1000)} seconds ago`);
+          return;
+        }
+        
+        try {
+          console.log('🔄 ChatStore: Syncing with Firebase...');
+          // Load fresh chat history for all companions
+          const companions: CompanionId[] = ['sayori', 'natsuki', 'yuri', 'monika'];
+          const allMessages = {...state.messages}; // Start with existing messages
+          
+          for (const companionId of companions) {
+            const history = await getChatHistory(uid, companionId);
+            
+            if (history.length > 0) {
+              console.log(`📥 ChatStore: Received ${history.length} messages for ${companionId}`);
+              
+              // Create a map of existing message IDs for faster lookup
+              const existingMsgIds = new Set(
+                (state.messages[companionId] || []).map(msg => msg.id)
+              );
+              
+              // Only add messages that we don't already have locally
+              const newMessages = history.filter(msg => !existingMsgIds.has(msg.id));
+              
+              if (newMessages.length > 0) {
+                console.log(`📥 ChatStore: Adding ${newMessages.length} new messages for ${companionId}`);
+                allMessages[companionId] = [
+                  ...(state.messages[companionId] || []),
+                  ...newMessages
+                ].sort((a, b) => 
+                  a.timestamp.toMillis() - b.timestamp.toMillis()
+                );
+              }
+            }
+          }
+          
+          set({ 
+            messages: allMessages,
+            lastSyncTime: now
+          });
+          
+          console.log('✅ ChatStore: Successfully synced with Firebase');
+        } catch (error) {
+          console.error('❌ ChatStore: Error syncing with Firebase:', error);
+        }
       },
       
       refreshChatData: async (uid, companionId) => {
+        // Wait for auth to be ready
+        if (!get().isAuthReady) {
+          console.log('⏳ ChatStore: Waiting for auth to be ready...');
+          return;
+        }
+        
+        // Verify auth state
+        if (!auth.currentUser || auth.currentUser.uid !== uid) {
+          console.log('❌ ChatStore: Auth state mismatch, cannot refresh chat data');
+          return;
+        }
+        
+        // Prevent recursive calls by checking if already loading
+        // This is critical to prevent infinite loops
+        const currentState = get();
+        if (currentState.isLoading) {
+          console.log('⚠️ ChatStore: Already loading, skipping redundant refresh');
+          return;
+        }
+        
         set({ isLoading: true });
         
         try {
-          // Load initial messages (if needed)
+          console.log(`📥 ChatStore: Refreshing chat data for companion ${companionId}`);
+          const history = await getChatHistory(uid, companionId);
+          
+          // Use a stable setter that won't trigger unnecessary renders
           set(state => ({
             messages: {
               ...state.messages,
-              [companionId]: state.messages[companionId] || []
+              [companionId]: history
             },
-            isLoading: false
+            isLoading: false,
+            // Update lastSyncTime to prevent immediate syncs after refresh
+            lastSyncTime: Date.now()
           }));
+          
+          console.log(`✅ ChatStore: Successfully refreshed chat data for ${companionId}`);
         } catch (error) {
+          console.error(`❌ ChatStore: Error refreshing chat data for ${companionId}:`, error);
           set({ 
             error: error instanceof Error ? error.message : 'Error loading chat data',
             isLoading: false
@@ -261,38 +438,56 @@ export const useChatStore = create<ChatState>()(
         }
       }
     }),
-    persistConfig
+    {
+      name: 'chat-storage',
+      storage: customStorage,
+      partialize: (state): PersistedState => ({
+        messages: state.messages,
+        pendingUpdates: state.pendingUpdates,
+        lastSyncTime: state.lastSyncTime,
+        currentUserId: state.currentUserId
+      })
+    }
   )
 );
 
-// Hook for automatic syncing
+// Modify the sync hook to handle auth initialization
 export function useSyncChatData() {
-  const { messages, syncWithFirebase } = useChatStore();
+  const { loadUserChatHistory, clearLocalState, syncWithFirebase, setAuthReady } = useChatStore();
   
   React.useEffect(() => {
-    if (!messages) return;
+    let mounted = true;
+    let previousUser: string | null = null;
     
-    // Initial sync
-    const uid = localStorage.getItem('userId');
-    if (uid) {
-      syncWithFirebase(uid);
+    // Listen for auth state changes
+    const unsubscribe = auth.onAuthStateChanged(async (user) => {
+      if (!mounted) return;
       
-      // Set up interval for periodic syncing
-      const syncInterval = setInterval(() => {
-        syncWithFirebase(uid);
-      }, 5 * 60 * 1000); // Sync every 5 minutes
+      // Set auth as ready
+      setAuthReady(true);
       
-      // Sync on page unload
-      const handleBeforeUnload = () => {
-        syncWithFirebase(uid, true); // Force sync
-      };
-      
-      window.addEventListener('beforeunload', handleBeforeUnload);
-      
-      return () => {
-        clearInterval(syncInterval);
-        window.removeEventListener('beforeunload', handleBeforeUnload);
-      };
-    }
-  }, [messages, syncWithFirebase]);
+      if (user) {
+        // Check if this is a different user than before
+        if (previousUser && previousUser !== user.uid) {
+          console.log(`🔑 ChatStore: User changed from ${previousUser} to ${user.uid}, clearing chat storage`);
+          // Clear chat-related localStorage items for the previous user
+          clearLocalState();
+        }
+        
+        previousUser = user.uid;
+        console.log(`🔑 ChatStore: User ${user.uid} logged in, loading chat history`);
+        await loadUserChatHistory(user.uid);
+        syncWithFirebase(user.uid);
+      } else {
+        console.log('🔑 ChatStore: User logged out, clearing local state');
+        previousUser = null;
+        clearLocalState();
+      }
+    });
+    
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
+  }, [loadUserChatHistory, clearLocalState, syncWithFirebase, setAuthReady]);
 } 

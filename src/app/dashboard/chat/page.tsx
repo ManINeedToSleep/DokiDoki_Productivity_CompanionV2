@@ -15,19 +15,24 @@ import { FaHeart, FaComments, FaCalendarDay, FaClock } from 'react-icons/fa';
 export default function ChatPage() {
   const { userData } = useUserData();
   const [messages, setMessages] = useState<ChatMessageType[]>([]);
-  const [companionId, setCompanionId] = useState<CompanionId>('sayori');
+  const [companionId, setCompanionId] = useState<CompanionId | null>(null);
   const [showWelcome, setShowWelcome] = useState(true);
+  const [isLoading, setIsLoading] = useState(true);
 
   // Get character-specific colors
-  const colors = getCharacterColors(companionId);
-  const dotColor = getCharacterDotColor(companionId);
+  const colors = getCharacterColors(companionId || 'sayori');
+  const dotColor = getCharacterDotColor(companionId || 'sayori');
 
   // Load chat history and set selected companion
   useEffect(() => {
     const loadChatData = async () => {
-      if (!auth.currentUser || !userData) return;
+      if (!auth.currentUser || !userData) {
+        setIsLoading(true);
+        return;
+      }
 
       try {
+        setIsLoading(true);
         // Set selected companion
         const selectedCompanion = userData.settings.selectedCompanion || 'sayori';
         setCompanionId(selectedCompanion);
@@ -40,6 +45,8 @@ export default function ChatPage() {
         setShowWelcome(history.length === 0);
       } catch (error) {
         console.error('Error loading chat data:', error);
+      } finally {
+        setIsLoading(false);
       }
     };
 
@@ -48,7 +55,7 @@ export default function ChatPage() {
 
   // Get companion stats
   const getCompanionStats = () => {
-    if (!userData || !userData.companions[companionId]) return null;
+    if (!userData || !companionId || !userData.companions[companionId]) return null;
 
     const companion = userData.companions[companionId];
     const level = Math.floor(companion.affinityLevel / 100) + 1;
@@ -64,7 +71,22 @@ export default function ChatPage() {
 
   const companionStats = getCompanionStats();
   
-  if (!userData) return null;
+  if (!userData || !companionId || isLoading) {
+    return (
+      <div className="fixed inset-0 bg-gray-50 overflow-hidden pt-[60px] flex items-center justify-center">
+        <div className="text-center">
+          <div 
+            className="w-12 h-12 border-4 rounded-full animate-spin mx-auto mb-4"
+            style={{ 
+              borderColor: colors.secondary,
+              borderTopColor: colors.primary 
+            }}
+          />
+          <p className="text-gray-600 font-[Halogen]">Loading chat...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 bg-gray-50 overflow-hidden pt-[60px]">

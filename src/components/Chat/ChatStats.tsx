@@ -1,14 +1,15 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { CompanionId } from '@/lib/firebase/companion';
 import { auth } from '@/lib/firebase';
-import { getRemainingMessages, MAX_DAILY_MESSAGES, getChatHistory } from '@/lib/firebase/chat';
+import { getRemainingMessages, MAX_DAILY_MESSAGES } from '@/lib/firebase/chat';
 import { FaComments, FaCalendarDay, FaChartLine, FaCoins } from 'react-icons/fa';
 import { getCharacterColors } from '@/components/Common/CharacterColor/CharacterColor';
 import { getDoc, doc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { useChatStore } from '@/lib/stores/chatStore';
 
 interface ChatStatsProps {
   companionId: CompanionId;
@@ -26,35 +27,62 @@ export default function ChatStats({ companionId, className = '' }: ChatStatsProp
   const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null);
   const [loading, setLoading] = useState(true);
   const colors = getCharacterColors(companionId);
+  const lastRefreshTime = useRef<number>(0);
 
   useEffect(() => {
     const loadChatStats = async () => {
+      // Prevent refresh if last refresh was less than 10 seconds ago
+      const now = Date.now();
+      if (now - lastRefreshTime.current < 10000) {
+        console.log('📊 ChatStats: Skipping refresh, last refresh was too recent');
+        return;
+      }
+      
+      lastRefreshTime.current = now;
+      
       if (!auth.currentUser) return;
       
       try {
         setLoading(true);
+        console.log('📊 ChatStats: Loading chat stats for companion', companionId);
         
         // Get remaining messages for today
         const remaining = await getRemainingMessages(auth.currentUser.uid);
+        console.log(`📊 ChatStats: User has ${remaining} messages remaining today`);
         setRemainingMessages(remaining);
         
-        // Get total messages exchanged with this companion
-        const history = await getChatHistory(auth.currentUser.uid, companionId);
-        setTotalMessages(history.length);
+        // Use the message count from the useChatStore state instead of fetching again
+        // This significantly reduces Firebase reads
+        const chatMessages = useChatStore.getState().messages[companionId] || [];
+        const total = chatMessages.length;
+        console.log(`📊 ChatStats: User has ${total} total messages with ${companionId}`);
+        setTotalMessages(total);
 
         // Get token usage
         const usageDoc = await getDoc(doc(db, 'users', auth.currentUser.uid, 'stats', 'tokenUsage'));
         if (usageDoc.exists()) {
-          setTokenUsage(usageDoc.data() as TokenUsage);
+          const usage = usageDoc.data() as TokenUsage;
+          console.log(`📊 ChatStats: User has used ${usage.dailyTokens} tokens today`);
+          setTokenUsage(usage);
+        } else {
+          console.log('📊 ChatStats: No token usage data found');
         }
       } catch (error) {
-        console.error("Error loading chat stats:", error);
+        console.error("❌ ChatStats: Error loading chat stats:", error);
       } finally {
         setLoading(false);
       }
     };
 
+    // Initial load
     loadChatStats();
+    
+    // Refresh stats every 5 minutes instead of 30 seconds
+    const intervalId = setInterval(loadChatStats, 5 * 60 * 1000);
+    
+    return () => {
+      clearInterval(intervalId);
+    };
   }, [companionId]);
 
   // Calculate percentage of messages used

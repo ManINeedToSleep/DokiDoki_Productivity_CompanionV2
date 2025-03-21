@@ -13,6 +13,7 @@ import { auth } from '@/lib/firebase';
 import { createUserDocument } from '@/lib/firebase/user';
 import { CompanionId } from '@/lib/firebase/companion';
 import { useEffect } from 'react';
+import Cookies from 'js-cookie';
 
 export type AuthMode = 'signin' | 'signup';
 
@@ -53,8 +54,10 @@ export const useAuthStore = create<AuthState>()(
       signInWithEmail: async (email: string, password: string) => {
         try {
           set({ isLoading: true, error: null });
-          await signInWithEmailAndPassword(auth, email, password);
-          // Auth state change will update the user
+          const { user } = await signInWithEmailAndPassword(auth, email, password);
+          const token = await user.getIdToken();
+          Cookies.set('firebase-session', token, { expires: 7 });
+          set({ user });
         } catch (error: unknown) {
           const authError = error as AuthError;
           set({ 
@@ -70,7 +73,9 @@ export const useAuthStore = create<AuthState>()(
           set({ isLoading: true, error: null });
           const { user } = await createUserWithEmailAndPassword(auth, email, password);
           await createUserDocument(user.uid, user.email!, companionId);
-          // Auth state change will update the user
+          const token = await user.getIdToken();
+          Cookies.set('firebase-session', token, { expires: 7 });
+          set({ user });
         } catch (error: unknown) {
           const authError = error as AuthError;
           set({ 
@@ -87,7 +92,9 @@ export const useAuthStore = create<AuthState>()(
           const provider = new GoogleAuthProvider();
           const { user } = await signInWithPopup(auth, provider);
           await createUserDocument(user.uid, user.email!, companionId);
-          // Auth state change will update the user
+          const token = await user.getIdToken();
+          Cookies.set('firebase-session', token, { expires: 7 });
+          set({ user });
         } catch (error: unknown) {
           const authError = error as AuthError;
           set({ 
@@ -102,6 +109,7 @@ export const useAuthStore = create<AuthState>()(
         try {
           set({ isLoading: true, error: null });
           await signOut(auth);
+          Cookies.remove('firebase-session');
           set({ user: null });
         } catch (error: unknown) {
           const authError = error as AuthError;
@@ -124,13 +132,17 @@ export const useAuthStore = create<AuthState>()(
 
 // Hook to listen for auth state changes
 export function useAuthStateListener() {
-  const setUser = useAuthStore(state => state.user);
-  
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        const token = await user.getIdToken();
+        Cookies.set('firebase-session', token, { expires: 7 });
+      } else {
+        Cookies.remove('firebase-session');
+      }
       useAuthStore.setState({ user });
     });
     
     return () => unsubscribe();
-  }, [setUser]);
+  }, []);
 } 

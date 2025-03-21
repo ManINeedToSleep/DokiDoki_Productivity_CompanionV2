@@ -37,12 +37,20 @@ export default function ChatInput({
 
   const inputColors = getInputColors(companionId);
   
+  // Prevent unnecessary refreshes when input is focused
+  const handleFocus = (e: React.FocusEvent) => {
+    // Stop event propagation to prevent it from bubbling up to window
+    e.stopPropagation();
+  };
+  
   return (
     <form onSubmit={handleSubmit} className="flex items-center gap-2">
       <input
         type="text"
         value={value}
         onChange={onChange}
+        onFocus={handleFocus}
+        onClick={(e) => e.stopPropagation()}
         placeholder={getPlaceholder(companionId)}
         className={`flex-1 p-3 rounded-lg focus:outline-none transition-all duration-200 placeholder-${inputColors.placeholder}`}
         style={{

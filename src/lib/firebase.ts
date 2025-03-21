@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import { getAuth, browserLocalPersistence, setPersistence } from 'firebase/auth';
 import { getFirestore, Timestamp } from 'firebase/firestore';
 
 const firebaseConfig = {
@@ -12,6 +12,16 @@ const firebaseConfig = {
 };
 
 export const app = initializeApp(firebaseConfig);
+
+// Initialize auth
 export const auth = getAuth(app);
+auth.useDeviceLanguage();
+
+// Configure auth to use browser persistence
+setPersistence(auth, browserLocalPersistence)
+  .catch(error => {
+    console.error('Error setting auth persistence:', error);
+  });
+
 export const db = getFirestore(app);
 export { Timestamp }; 

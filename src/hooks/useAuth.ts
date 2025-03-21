@@ -23,29 +23,45 @@ export function useAuth() {
 
   // Enhanced authentication methods with navigation
   const enhancedSignIn = async (email: string, password: string) => {
-    await signInWithEmail(email, password);
-    if (!useAuthStore.getState().error) {
-      router.push('/dashboard');
+    try {
+      await signInWithEmail(email, password);
+      if (!useAuthStore.getState().error) {
+        router.push('/dashboard');
+      }
+    } catch (error) {
+      console.error('Sign in error:', error);
     }
   };
 
   const enhancedSignUp = async (email: string, password: string, companionId: CompanionId) => {
-    await signUpWithEmail(email, password, companionId);
-    if (!useAuthStore.getState().error) {
-      router.push('/dashboard');
+    try {
+      await signUpWithEmail(email, password, companionId);
+      if (!useAuthStore.getState().error) {
+        router.push('/dashboard');
+      }
+    } catch (error) {
+      console.error('Sign up error:', error);
     }
   };
 
   const enhancedGoogleSignIn = async (companionId: CompanionId) => {
-    await signInWithGoogle(companionId);
-    if (!useAuthStore.getState().error) {
-      router.push('/dashboard');
+    try {
+      await signInWithGoogle(companionId);
+      if (!useAuthStore.getState().error) {
+        router.push('/dashboard');
+      }
+    } catch (error) {
+      console.error('Google sign in error:', error);
     }
   };
 
   const enhancedLogout = async () => {
-    await logout();
-    router.push('/auth');
+    try {
+      await logout();
+      router.push('/auth');
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
   };
 
   // Check if user is authenticated
@@ -57,7 +73,7 @@ export function useAuth() {
       if (user && !isLoading) {
         router.push(path);
       }
-    }, [user, isLoading, router]);
+    }, [user, isLoading, router, path]);
   };
 
   // Redirect to login if not authenticated
@@ -66,7 +82,7 @@ export function useAuth() {
       if (!user && !isLoading) {
         router.push(path);
       }
-    }, [user, isLoading, router]);
+    }, [user, isLoading, router, path]);
   };
 
   return {

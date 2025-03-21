@@ -127,6 +127,8 @@ export const addChatMessage = async (
 ): Promise<void> => {
   try {
     console.log(`📝 Chat.ts: Adding new chat message for user ${userId} with companion ${companionId}`);
+    console.log(`📝 Chat.ts: Message content: "${message.content.substring(0, 30)}..."`);
+    console.log(`📝 Chat.ts: Message ID: ${message.id}, Sender: ${message.sender}`);
     
     // Get message prefix for more precise matching (first 20 chars of ID)
     const messageIdPrefix = message.id.substring(0, 20);
@@ -246,20 +248,29 @@ export const addChatMessage = async (
     }
     
     // Add message to the chat collection
-    console.log('💬 Chat.ts: Adding message to Firestore');
+    console.log('💾 Chat.ts: About to add message to Firestore');
     const chatCollection = collection(db, 'users', userId, 'chats');
-    await addDoc(chatCollection, {
+    const docRef = await addDoc(chatCollection, {
       sender: message.sender,
       content: message.content,
       timestamp: message.timestamp,
       companionId: companionId,
+      deleted: false
     });
+    
+    console.log(`✅ Chat.ts: Message added successfully with document ID: ${docRef.id}`);
     
     // Update token usage
     const messageTokens = countTokens(message.content);
     await updateTokenUsage(userId, messageTokens);
     
-    console.log('✅ Chat.ts: Message added successfully');
+    // After successful save, run diagnostic to verify it was saved
+    console.log('🔍 Chat.ts: Verifying message was saved by running diagnostic');
+    setTimeout(() => {
+      getAllChatMessagesForDebugging(userId, companionId).catch(err => {
+        console.error('❌ Chat.ts: Error running post-save diagnostic:', err);
+      });
+    }, 500); // Small delay to ensure Firestore has time to update
     
   } catch (error) {
     console.error('❌ Chat.ts: Error adding chat message:', error);
@@ -294,42 +305,69 @@ export const getChatHistory = async (
     // Log current auth state
     if (auth.currentUser) {
       console.log(`🔑 Chat.ts: Current auth user: ${auth.currentUser.uid}`);
-      // Check if user IDs match
-      if (auth.currentUser.uid !== userId) {
-        console.warn(`⚠️ Chat.ts: Auth user ID (${auth.currentUser.uid}) doesn't match requested user ID (${userId})`);
-      }
       
       try {
         // Check token expiration
         const tokenResult = await auth.currentUser.getIdTokenResult();
         const expTime = new Date(tokenResult.expirationTime);
         const timeUntilExp = expTime.getTime() - Date.now();
-        console.log(`🔑 Chat.ts: Token expires in ${Math.round(timeUntilExp/60000)} minutes (${expTime.toLocaleString()})`);
+        console.log(`🔑 Chat.ts: Token expires in ${Math.round(timeUntilExp/60000)} minutes`);
+        
+        // Force refresh token if it's close to expiring
+        if (timeUntilExp < 5 * 60 * 1000) {
+          await auth.currentUser.getIdToken(true);
+        }
       } catch (e) {
         console.error('❌ Chat.ts: Error checking token expiration:', e);
       }
-    } else {
-      console.warn('⚠️ Chat.ts: No authenticated user found when fetching chat history');
     }
     
     const chatCollection = collection(db, 'users', userId, 'chats');
     console.log(`🔍 Chat.ts: Query path - users/${userId}/chats`);
     
-    const q = query(
+    // Check if collection exists first
+    try {
+      // Get at least one document to check if collection exists
+      const checkQuery = query(
+        chatCollection,
+        limit(1)
+      );
+      
+      const checkSnapshot = await getDocs(checkQuery);
+      if (checkSnapshot.empty) {
+        console.log(`⚠️ Chat.ts: No messages found for user ${userId} in chats collection`);
+      } else {
+        console.log(`✅ Chat.ts: Chats collection exists for user ${userId}`);
+      }
+    } catch (e) {
+      console.error('❌ Chat.ts: Error checking chats collection:', e);
+    }
+    
+    // First, build a query that gets messages for this companion
+    const baseQuery = query(
       chatCollection,
       where('companionId', '==', companionId),
       orderBy('timestamp', 'desc'),
       limit(MAX_CHAT_HISTORY)
     );
     
-    console.log('🔍 Chat.ts: Executing Firestore query for messages');
-    const querySnapshot = await getDocs(q);
+    console.log(`🔍 Chat.ts: Executing query for companion ${companionId}`);
+    const querySnapshot = await getDocs(baseQuery);
     console.log(`✅ Chat.ts: Query executed successfully, got ${querySnapshot.size} documents`);
     
     const messages: ChatMessageType[] = [];
     
+    // Process results, filtering out any explicitly deleted messages
     querySnapshot.forEach((doc) => {
       const data = doc.data();
+      
+      // Skip messages that are explicitly marked as deleted
+      if (data.deleted === true) {
+        console.log(`🔍 Chat.ts: Skipping deleted message ${doc.id}`);
+        return;
+      }
+      
+      console.log(`🔍 Chat.ts: Processing message ${doc.id}, sender: ${data.sender}`);
       messages.push({
         id: doc.id,
         sender: data.sender,
@@ -339,27 +377,12 @@ export const getChatHistory = async (
       });
     });
     
-    console.log(`✅ Chat.ts: Processed ${messages.length} messages, returning chat history`);
-    
+    console.log(`✅ Chat.ts: Returning ${messages.length} messages after filtering`);
     // Return messages in chronological order
     return messages.reverse();
     
   } catch (error) {
     console.error('❌ Chat.ts: Error getting chat history:', error);
-    
-    // Log specific error details for Firestore permission issues
-    if (error instanceof Error) {
-      if (error.message.includes('permission')) {
-        console.error(`🔒 Chat.ts: Permission denied error details: 
-          - User ID: ${userId}
-          - Companion ID: ${companionId}
-          - Error message: ${error.message}
-          - Is Auth Current User set: ${!!auth.currentUser}
-          - Auth UID: ${auth.currentUser?.uid}
-        `);
-      }
-    }
-    
     return [];
   }
 };
@@ -444,19 +467,17 @@ export const checkAndUpdateUsage = async (
       lastDay.setHours(0, 0, 0, 0);
       
       // Check if it's a new day
-      const isNewDay = today.getTime() !== lastDay.getTime();
-      
-      if (isNewDay) {
+      if (today.getTime() !== lastDay.getTime()) {
         // Reset for new day
-        await updateDoc(usageRef, {
-          dailyMessageCount: 1, // This message counts as the first one
+        await setDoc(usageRef, {
+          dailyMessageCount: 1,
           lastMessageDate: now
         });
         return true;
       } else {
         // Same day, check against limit
         if (usage.dailyMessageCount >= MAX_DAILY_MESSAGES) {
-          return false; // Limit reached
+          return false;
         }
         
         // Increment counter
@@ -468,17 +489,14 @@ export const checkAndUpdateUsage = async (
       }
     } else {
       // Create new usage document
-      const newUsage: ChatUsage = {
+      await setDoc(usageRef, {
         dailyMessageCount: 1,
         lastMessageDate: now
-      };
-      
-      await setDoc(usageRef, newUsage);
+      });
       return true;
     }
   } catch (error) {
     console.error('Error checking usage limits:', error);
-    // If we can't check limits, default to allowing the message
     return true;
   }
 };
@@ -539,5 +557,42 @@ export const getRemainingMessages = async (
     }
     
     return MAX_DAILY_MESSAGES; // Default to full amount if we can't check
+  }
+};
+
+/**
+ * Diagnostic function to get ALL chat messages regardless of filters
+ * This is for debugging purposes only
+ */
+export const getAllChatMessagesForDebugging = async (
+  userId: string,
+  companionId: CompanionId
+): Promise<void> => {
+  try {
+    console.log(`🔍 DIAGNOSTIC: Fetching ALL chat messages for user ${userId} with companion ${companionId}`);
+    
+    const chatCollection = collection(db, 'users', userId, 'chats');
+    console.log(`🔍 DIAGNOSTIC: Query path - users/${userId}/chats`);
+    
+    // Simple query with no filtering
+    const q = query(
+      chatCollection,
+      where('companionId', '==', companionId)
+    );
+    
+    const querySnapshot = await getDocs(q);
+    console.log(`🔍 DIAGNOSTIC: Found ${querySnapshot.size} total documents`);
+    
+    // Log all documents and their data
+    querySnapshot.forEach((doc) => {
+      const data = doc.data();
+      console.log(`🔍 DIAGNOSTIC: Document ${doc.id}:`, data);
+      console.log(`🔍 DIAGNOSTIC: Timestamp:`, data.timestamp?.toDate());
+      console.log(`🔍 DIAGNOSTIC: Deleted field:`, data.deleted === undefined ? 'MISSING' : data.deleted);
+      console.log('----------------------------------------');
+    });
+    
+  } catch (error) {
+    console.error('❌ DIAGNOSTIC: Error getting all chat messages:', error);
   }
 };

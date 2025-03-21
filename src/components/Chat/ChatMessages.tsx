@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Image from 'next/image';
 import { CompanionId } from '@/lib/firebase/companion';
@@ -34,6 +34,23 @@ export default function ChatMessages({
     scrollToBottom();
   }, [messages, isTyping]);
 
+  // Deduplicate messages to prevent visual duplicates
+  const deduplicatedMessages = useMemo(() => {
+    const uniqueMessages = new Map<string, ChatMessageType>();
+    
+    // Process in reverse to keep most recent version of duplicates
+    [...messages].reverse().forEach(message => {
+      // For messages with the same ID, keep the most recent one
+      if (!uniqueMessages.has(message.id)) {
+        uniqueMessages.set(message.id, message);
+      }
+    });
+    
+    // Convert back to array and ensure chronological order
+    return Array.from(uniqueMessages.values())
+      .sort((a, b) => a.timestamp.toMillis() - b.timestamp.toMillis());
+  }, [messages]);
+
   return (
     <div className="h-full overflow-y-auto custom-scrollbar">
       <div className="flex flex-col min-h-full p-4">
@@ -51,7 +68,7 @@ export default function ChatMessages({
                   alt={companionId}
                   width={72}
                   height={72}
-                  className="mx-auto mb-2 object-contain"
+                  className="mx-auto mb-2 object-contain w-auto h-auto"
                   priority
                 />
                 <h3 className="text-lg font-[Riffic] mb-1" style={{ color: colors.heading }}>
@@ -66,7 +83,7 @@ export default function ChatMessages({
         </div>
 
         <div className="space-y-2">
-          {messages.map((message) => (
+          {deduplicatedMessages.map((message) => (
             <ChatMessage
               key={message.id}
               message={message}

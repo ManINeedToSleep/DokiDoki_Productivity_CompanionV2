@@ -763,6 +763,23 @@ export function useUserData() {
       if (user) {
         console.log(`🔑 UserStore: Auth state changed - user ${user.uid} logged in, syncing data`);
         
+        // If there's a mismatch between current user data and auth, clear storage
+        const currentUser = useUserStore.getState().user;
+        if (currentUser && currentUser.base && currentUser.base.uid !== user.uid) {
+          console.log(`⚠️ UserStore: User ID mismatch. Current: ${currentUser.base.uid}, Auth: ${user.uid}`);
+          console.log('⚠️ UserStore: Clearing localStorage for user data');
+          
+          // Clear only this user's storage, don't force a reload
+          Object.keys(localStorage).forEach(key => {
+            if (key.includes('user-') || key.includes('user_')) {
+              localStorage.removeItem(key);
+            }
+          });
+          
+          // Reset the user state
+          useUserStore.setState({ user: null });
+        }
+        
         // Check token status
         try {
           const tokenResult = await user.getIdTokenResult();
