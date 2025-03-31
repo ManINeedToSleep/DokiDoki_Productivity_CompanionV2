@@ -8,8 +8,11 @@ import { getCharacterColors } from '@/components/Common/CharacterColor/Character
 import ChatInput from './ChatInput';
 import ChatMessages from './ChatMessages';
 import { useChatStore, useSyncChatData } from '@/lib/stores/chatStore';
-import { getAllChatMessagesForDebugging } from '@/lib/firebase/chat';
+import { getAllChatMessagesForDebugging, clearChatHistory } from '@/lib/firebase/chat';
 import { auth } from '@/lib/firebase';
+import { FaSync, FaWrench } from 'react-icons/fa';
+import Image from 'next/image';
+import { getCompanionFullImagePath } from '@/components/Common/Paths/ImagePath';
 
 interface ChatContainerProps {
   companionId: CompanionId;
@@ -24,6 +27,7 @@ export default function ChatContainer({
 }: ChatContainerProps) {
   const colors = getCharacterColors(companionId);
   const [newMessage, setNewMessage] = useState('');
+  const [isSyncing, setIsSyncing] = useState(false);
   
   // Create a ref to track loading state and prevent duplicate loads
   const isLoadingRef = useRef(false);
@@ -38,11 +42,15 @@ export default function ChatContainer({
     isTyping,
     refreshChatData,
     isAuthReady,
-    syncWithFirebase 
+    syncWithFirebase,
+    clearMessages
   } = useChatStore();
   
   // Use sync hook
   useSyncChatData();
+
+  // Get companion's name with proper capitalization
+  const companionName = companionId.charAt(0).toUpperCase() + companionId.slice(1);
   
   // Load chat history when component mounts or auth becomes ready
   useEffect(() => {
@@ -186,23 +194,38 @@ export default function ChatContainer({
       setNewMessage(messageToSend);
     }
   };
+
+  // Manual sync handler with visual feedback
+  const handleManualSync = async () => {
+    if (!userData || !isAuthReady || isSyncing) return;
+
+    setIsSyncing(true);
+    try {
+      await syncWithFirebase(userData.base.uid, true);
+    } catch (error) {
+      console.error('Error syncing chat data:', error);
+    } finally {
+      // Short delay to prevent UI flicker
+      setTimeout(() => setIsSyncing(false), 1000);
+    }
+  };
   
   // Show loading state while auth is initializing
   if (!isAuthReady) {
     return (
       <motion.div 
-        className="bg-white/80 backdrop-blur-sm rounded-lg p-8 shadow-lg h-[calc(100vh-8rem)] flex items-center justify-center"
+        className="bg-white/80 backdrop-blur-sm rounded-xl p-8 shadow-lg h-[calc(100vh-8rem)] flex items-center justify-center"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
       >
         <div className="text-center">
-          <div className="w-8 h-8 border-4 rounded-full animate-spin mx-auto mb-4"
+          <div className="w-10 h-10 border-4 rounded-full animate-spin mx-auto mb-5"
             style={{ 
               borderColor: colors.secondary,
               borderTopColor: colors.primary 
             }}
           />
-          <p className="text-gray-600">Loading chat...</p>
+          <p className="text-gray-600 font-[Halogen]">Connecting to chat server...</p>
         </div>
       </motion.div>
     );
@@ -210,22 +233,53 @@ export default function ChatContainer({
   
   return (
     <motion.div 
-      className="bg-white/80 backdrop-blur-sm rounded-lg p-8 shadow-lg h-[calc(100vh-8rem)] flex flex-col"
+      className="bg-white/90 backdrop-blur-sm rounded-xl p-8 shadow-lg h-[calc(100vh-8rem)] flex flex-col"
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
     >
-      <h1 className="text-3xl font-[Riffic] mb-8" style={{ color: colors.heading }}>
-        Chat with {companionId.charAt(0).toUpperCase() + companionId.slice(1)}
-      </h1>
+      <div className="flex justify-between items-center mb-6">
+        <div className="flex items-center">
+          <Image 
+            src={getCompanionFullImagePath(companionId)}
+            alt={companionName}
+            width={40}
+            height={40}
+            className="rounded-full border-2 mr-3 object-cover"
+            style={{ borderColor: colors.primary }}
+          />
+          <h1 className="text-2xl font-[Riffic]" style={{ color: colors.heading }}>
+            Chat with {companionName}
+          </h1>
+        </div>
+        
+        <div className="flex items-center">
+          <motion.button
+            onClick={handleManualSync}
+            disabled={isSyncing}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            className="flex items-center justify-center p-2 rounded-full text-gray-500 hover:bg-gray-100 transition-colors"
+            title="Sync chat data"
+          >
+            <motion.div
+              animate={isSyncing ? { rotate: 360 } : { rotate: 0 }}
+              transition={isSyncing ? { repeat: Infinity, duration: 1, ease: "linear" } : {}}
+            >
+              <FaSync size={16} />
+            </motion.div>
+          </motion.button>
+        </div>
+      </div>
 
-      <ChatMessages
-        messages={messages[companionId] || []}
-        companionId={companionId}
-        isTyping={isTyping}
-        showWelcome={showWelcome}
-      />
+      <div className="flex-1 overflow-hidden">
+        <ChatMessages
+          messages={messages[companionId] || []}
+          companionId={companionId}
+          isTyping={isTyping}
+          showWelcome={showWelcome}
+        />
+      </div>
 
-      {/* Simplified - no need for extensive propagation stopping */}
       <ChatInput
         value={newMessage}
         onChange={handleInputChange}
@@ -234,22 +288,55 @@ export default function ChatContainer({
         companionId={companionId}
       />
       
-      {/* Debug button - only visible in development */}
+      {/* Debug buttons - only visible in development */}
       {process.env.NODE_ENV !== 'production' && (
-        <button 
-          onClick={() => {
-            console.log('🔧 ChatContainer: Running diagnostic for chat messages');
-            if (userData && auth.currentUser && userData.base.uid === auth.currentUser.uid) {
-              console.log(`🔧 ChatContainer: Running diagnostic for user ${userData.base.uid} with companion ${companionId}`);
-              getAllChatMessagesForDebugging(userData.base.uid, companionId);
-            } else {
-              console.error('❌ ChatContainer: User mismatch or not authenticated, skipping diagnostic');
-            }
-          }}
-          className="mt-2 text-xs text-gray-500 hover:text-gray-700 px-2 py-1 rounded border border-gray-300"
-        >
-          Diagnose Chat Issues
-        </button>
+        <div className="mt-3 flex flex-wrap gap-2 justify-center">
+          <button 
+            onClick={() => {
+              console.log('🔧 ChatContainer: Running diagnostic for chat messages');
+              if (userData && auth.currentUser && userData.base.uid === auth.currentUser.uid) {
+                console.log(`🔧 ChatContainer: Running diagnostic for user ${userData.base.uid} with companion ${companionId}`);
+                getAllChatMessagesForDebugging(userData.base.uid, companionId);
+              } else {
+                console.error('❌ ChatContainer: User mismatch or not authenticated, skipping diagnostic');
+              }
+            }}
+            className="text-xs flex items-center gap-1 text-gray-500 hover:text-gray-700 px-2 py-1 rounded border border-gray-300"
+          >
+            <FaWrench size={12} />
+            <span>Diagnose Chat Issues</span>
+          </button>
+          
+          <button 
+            onClick={async () => {
+              if (userData && auth.currentUser && userData.base.uid === auth.currentUser.uid) {
+                try {
+                  // Clear local chat messages for this companion
+                  clearMessages(companionId);
+                  
+                  // Clear Firebase chat messages
+                  await clearChatHistory(userData.base.uid, companionId);
+                  
+                  // Refresh data
+                  await refreshChatData(userData.base.uid, companionId);
+                  
+                  console.log(`🧹 ChatContainer: Cleared chat history for ${userData.base.uid} with companion ${companionId}`);
+                  alert("Chat history cleared successfully!");
+                } catch (error) {
+                  console.error('❌ ChatContainer: Error clearing chat history:', error);
+                  alert("Error clearing chat history");
+                }
+              } else {
+                console.error('❌ ChatContainer: User mismatch or not authenticated, cannot clear history');
+                alert("Not authenticated, cannot clear history");
+              }
+            }}
+            className="text-xs flex items-center gap-1 text-red-500 hover:text-red-700 px-2 py-1 rounded border border-red-300"
+          >
+            <FaWrench size={12} />
+            <span>Clear Chat History</span>
+          </button>
+        </div>
       )}
     </motion.div>
   );

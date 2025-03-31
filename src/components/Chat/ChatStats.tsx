@@ -5,7 +5,7 @@ import { motion } from 'framer-motion';
 import { CompanionId } from '@/lib/firebase/companion';
 import { auth } from '@/lib/firebase';
 import { getRemainingMessages, MAX_DAILY_MESSAGES } from '@/lib/firebase/chat';
-import { FaComments, FaCalendarDay, FaChartLine, FaCoins } from 'react-icons/fa';
+import { FaComments, FaCalendarDay, FaChartLine, FaCoins, FaHeart, FaFire } from 'react-icons/fa';
 import { getCharacterColors } from '@/components/Common/CharacterColor/CharacterColor';
 import { getDoc, doc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
@@ -26,8 +26,13 @@ export default function ChatStats({ companionId, className = '' }: ChatStatsProp
   const [totalMessages, setTotalMessages] = useState(0);
   const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null);
   const [loading, setLoading] = useState(true);
+  const [currentStreak, setCurrentStreak] = useState(0);
+  const [conversationScore, setConversationScore] = useState(0);
   const colors = getCharacterColors(companionId);
   const lastRefreshTime = useRef<number>(0);
+  
+  // Use the store hook instead of getState() to properly subscribe to state changes
+  const messages = useChatStore(state => state.messages[companionId] || []);
 
   useEffect(() => {
     const loadChatStats = async () => {
@@ -51,10 +56,8 @@ export default function ChatStats({ companionId, className = '' }: ChatStatsProp
         console.log(`📊 ChatStats: User has ${remaining} messages remaining today`);
         setRemainingMessages(remaining);
         
-        // Use the message count from the useChatStore state instead of fetching again
-        // This significantly reduces Firebase reads
-        const chatMessages = useChatStore.getState().messages[companionId] || [];
-        const total = chatMessages.length;
+        // Use the messages from the hook instead of direct store access
+        const total = messages.length;
         console.log(`📊 ChatStats: User has ${total} total messages with ${companionId}`);
         setTotalMessages(total);
 
@@ -67,6 +70,47 @@ export default function ChatStats({ companionId, className = '' }: ChatStatsProp
         } else {
           console.log('📊 ChatStats: No token usage data found');
         }
+
+        // Get streak information
+        try {
+          const streakDoc = await getDoc(doc(db, 'users', auth.currentUser.uid, 'stats', 'streaks'));
+          if (streakDoc.exists()) {
+            const streakData = streakDoc.data();
+            if (streakData[companionId]) {
+              setCurrentStreak(streakData[companionId].currentStreak || 0);
+            }
+          }
+        } catch (err) {
+          console.error('Error loading streak data:', err);
+        }
+
+        // Calculate a "conversation quality" score based on message length, response time, etc.
+        if (messages.length > 0) {
+          // This is a simplistic scoring that could be improved
+          const averageMessageLength = messages.reduce((sum, msg) => 
+            sum + msg.content.length, 0) / messages.length;
+          
+          // Look at recent conversation flow (last 10 messages if available)
+          const recentMessages = messages.slice(-Math.min(10, messages.length));
+          
+          // Check for conversation flow - alternating messages is good
+          let flowScore = 0;
+          for (let i = 1; i < recentMessages.length; i++) {
+            if (recentMessages[i].sender !== recentMessages[i-1].sender) {
+              flowScore++;
+            }
+          }
+          
+          // Calculate a score out of 100
+          const lengthScore = Math.min(100, averageMessageLength / 2);
+          const normalizedFlowScore = recentMessages.length > 1 
+            ? (flowScore / (recentMessages.length - 1)) * 100 
+            : 0;
+          
+          const finalScore = Math.round((lengthScore * 0.6) + (normalizedFlowScore * 0.4));
+          setConversationScore(finalScore);
+        }
+        
       } catch (error) {
         console.error("❌ ChatStats: Error loading chat stats:", error);
       } finally {
@@ -83,26 +127,35 @@ export default function ChatStats({ companionId, className = '' }: ChatStatsProp
     return () => {
       clearInterval(intervalId);
     };
-  }, [companionId]);
+  }, [companionId, messages]);
 
   // Calculate percentage of messages used
   const usedMessages = MAX_DAILY_MESSAGES - remainingMessages;
   const percentUsed = Math.round((usedMessages / MAX_DAILY_MESSAGES) * 100);
 
   // Calculate token usage percentage
-  const MAX_DAILY_TOKENS = 20000;
+  const MAX_DAILY_TOKENS = 100000;
   const tokenUsagePercent = tokenUsage 
     ? Math.round((tokenUsage.dailyTokens / MAX_DAILY_TOKENS) * 100)
     : 0;
 
+  // Get conversation quality description
+  const getQualityDescription = (score: number) => {
+    if (score >= 90) return "Excellent";
+    if (score >= 75) return "Great";
+    if (score >= 60) return "Good";
+    if (score >= 40) return "Fair";
+    return "New";
+  };
+
   return (
     <motion.div
-      className={`bg-white rounded-xl shadow-md p-4 ${className}`}
+      className={`bg-white/90 backdrop-blur-sm rounded-xl shadow-md p-5 ${className}`}
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: 0.2 }}
     >
-      <h2 className="text-lg font-[Riffic] mb-3" style={{ color: colors.heading }}>
+      <h2 className="text-lg font-[Riffic] mb-4" style={{ color: colors.heading }}>
         Chat Stats
       </h2>
       
@@ -129,14 +182,16 @@ export default function ChatStats({ companionId, className = '' }: ChatStatsProp
           </div>
           
           {/* Progress bar */}
-          <div className="h-3 bg-gray-200 rounded-full mb-4">
-            <div
-              className="h-full rounded-full transition-all duration-300"
+          <div className="h-3 bg-gray-200 rounded-full mb-4 overflow-hidden">
+            <motion.div
+              initial={{ width: 0 }}
+              animate={{ width: `${percentUsed}%` }}
+              transition={{ duration: 1, ease: "easeOut" }}
+              className="h-full rounded-full"
               style={{
-                width: `${percentUsed}%`,
                 backgroundColor: colors.primary
               }}
-            ></div>
+            ></motion.div>
           </div>
 
           {/* Token usage */}
@@ -148,25 +203,27 @@ export default function ChatStats({ companionId, className = '' }: ChatStatsProp
                   <span className="text-sm font-[Halogen] text-gray-700">Token Usage</span>
                 </div>
                 <span className="font-[Halogen] text-gray-800 font-bold">
-                  {tokenUsage.dailyTokens}/{MAX_DAILY_TOKENS}
+                  {tokenUsage.dailyTokens.toLocaleString()}/{MAX_DAILY_TOKENS.toLocaleString()}
                 </span>
               </div>
               
               {/* Token usage progress bar */}
-              <div className="h-3 bg-gray-200 rounded-full mb-4">
-                <div
-                  className="h-full rounded-full transition-all duration-300"
+              <div className="h-3 bg-gray-200 rounded-full mb-4 overflow-hidden">
+                <motion.div
+                  initial={{ width: 0 }}
+                  animate={{ width: `${tokenUsagePercent}%` }}
+                  transition={{ duration: 1, ease: "easeOut" }}
+                  className="h-full rounded-full"
                   style={{
-                    width: `${tokenUsagePercent}%`,
                     backgroundColor: colors.primary
                   }}
-                ></div>
+                ></motion.div>
               </div>
             </>
           )}
           
-          <div className="grid grid-cols-2 gap-3">
-            <div className="text-center bg-gray-50 rounded-lg p-2 flex-1 mr-2">
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            <div className="text-center bg-gray-50 rounded-lg p-3 flex-1 shadow-sm">
               <div className="flex justify-center mb-1">
                 <FaCalendarDay style={{ color: colors.text }} />
               </div>
@@ -178,7 +235,7 @@ export default function ChatStats({ companionId, className = '' }: ChatStatsProp
               </div>
             </div>
             
-            <div className="text-center bg-gray-50 rounded-lg p-2 flex-1">
+            <div className="text-center bg-gray-50 rounded-lg p-3 flex-1 shadow-sm">
               <div className="flex justify-center mb-1">
                 <FaChartLine style={{ color: colors.text }} />
               </div>
@@ -190,10 +247,37 @@ export default function ChatStats({ companionId, className = '' }: ChatStatsProp
               </div>
             </div>
           </div>
+
+          {/* New stats section */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="text-center bg-gray-50 rounded-lg p-3 flex-1 shadow-sm">
+              <div className="flex justify-center mb-1">
+                <FaFire style={{ color: colors.text }} />
+              </div>
+              <div className="text-lg font-bold font-[Halogen]" style={{ color: colors.text }}>
+                {currentStreak}
+              </div>
+              <div className="text-xs text-gray-600 font-[Halogen]">
+                Day Streak
+              </div>
+            </div>
+            
+            <div className="text-center bg-gray-50 rounded-lg p-3 flex-1 shadow-sm">
+              <div className="flex justify-center mb-1">
+                <FaHeart style={{ color: colors.text }} />
+              </div>
+              <div className="text-lg font-bold font-[Halogen]" style={{ color: colors.text }}>
+                {getQualityDescription(conversationScore)}
+              </div>
+              <div className="text-xs text-gray-600 font-[Halogen]">
+                Conversation Quality
+              </div>
+            </div>
+          </div>
           
           {remainingMessages < 10 && (
             <div 
-              className="mt-4 text-xs font-[Halogen] text-center"
+              className="mt-4 text-xs font-[Halogen] p-2 bg-red-50 rounded-lg text-center"
               style={{ color: colors.text }}
             >
               {remainingMessages === 0 
@@ -204,12 +288,12 @@ export default function ChatStats({ companionId, className = '' }: ChatStatsProp
 
           {tokenUsage && tokenUsage.dailyTokens > MAX_DAILY_TOKENS * 0.8 && (
             <div 
-              className="mt-4 text-xs font-[Halogen] text-center"
+              className="mt-4 text-xs font-[Halogen] p-2 bg-yellow-50 rounded-lg text-center"
               style={{ color: colors.text }}
             >
               {tokenUsage.dailyTokens >= MAX_DAILY_TOKENS
                 ? "You've reached your daily token limit. Come back tomorrow!" 
-                : `Running low on tokens today (${MAX_DAILY_TOKENS - tokenUsage.dailyTokens} left)`}
+                : `Running low on tokens today (${(MAX_DAILY_TOKENS - tokenUsage.dailyTokens).toLocaleString()} left)`}
             </div>
           )}
         </>

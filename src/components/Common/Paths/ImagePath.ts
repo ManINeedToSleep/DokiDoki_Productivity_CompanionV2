@@ -107,6 +107,11 @@ export const getCompanionImagePath = (
   return imagePaths.characterSprites[characterId];
 };
 
+// Helper function to get the full image path for a character (non-chibi version)
+export const getCompanionFullImagePath = (characterId: CompanionId): string => {
+  return imagePaths.characterSprites[characterId];
+};
+
 // Helper function to get the chibi version of a character
 export const getCompanionChibiPath = (characterId: CompanionId): string => {
   return imagePaths.characterSprites[`${characterId}Chibi`];

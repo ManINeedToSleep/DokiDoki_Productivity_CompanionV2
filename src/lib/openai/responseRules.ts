@@ -170,6 +170,22 @@ const CHARACTER_RULES: CharacterResponseRule[] = [
     priority: 4,
     personalityTraits: ['responsible', 'caring']
   },
+  {
+    companionId: 'sayori',
+    category: ResponseCategory.ERROR,
+    patterns: [],
+    responses: [
+      "Oops! Let's try something else! What can I help you with today? Ehehe~",
+      "Sorry about that! Let's talk about your goals instead! What are you working on?",
+      "My bad! Let's get back on track! How can I help you be more productive today?",
+      "Whoopsie! Let's try a different approach! What would you like to focus on?",
+      "Ehehe~ Sorry for the confusion! Let's start fresh! What's on your mind?"
+    ],
+    priority: 5,
+    personalityTraits: ['cheerful', 'helpful'],
+    mood: 'energetic',
+    intensity: 'medium'
+  },
   // Natsuki's rules
   {
     companionId: 'natsuki',
@@ -198,6 +214,22 @@ const CHARACTER_RULES: CharacterResponseRule[] = [
     cooldown: 30000,
     personalityTraits: ['tsundere', 'caring'],
     mood: 'embarrassed',
+    intensity: 'high'
+  },
+  {
+    companionId: 'natsuki',
+    category: ResponseCategory.ERROR,
+    patterns: [],
+    responses: [
+      "Ugh, this is getting nowhere! Let's talk about something else. What tasks do you need help with?",
+      "This is ridiculous! Let's just move on to something more productive, okay?",
+      "Whatever! Let's just change the subject. Tell me what you're working on instead.",
+      "This conversation is too weird. Let's get back to something useful, got it?",
+      "I'm not dealing with this anymore! Let's just focus on your goals, alright?"
+    ],
+    priority: 5,
+    personalityTraits: ['tsundere', 'direct'],
+    mood: 'annoyed',
     intensity: 'high'
   },
   // Yuri's rules
@@ -230,6 +262,22 @@ const CHARACTER_RULES: CharacterResponseRule[] = [
     mood: 'anxious',
     intensity: 'high'
   },
+  {
+    companionId: 'yuri',
+    category: ResponseCategory.ERROR,
+    patterns: [],
+    responses: [
+      "I apologize for the interruption. What would you like to discuss about your productivity goals?",
+      "I'm sorry, there seems to be a miscommunication. Let's try a different approach to helping with your tasks.",
+      "My apologies for any confusion. Perhaps we should start with setting a specific goal for today?",
+      "I seem to have lost my train of thought. Would you prefer to discuss your current project or create a new plan?",
+      "I'm terribly sorry for the disruption. Let's refocus on something productive you'd like to accomplish."
+    ],
+    priority: 5,
+    personalityTraits: ['thoughtful', 'helpful'],
+    mood: 'concerned',
+    intensity: 'medium'
+  },
   // Monika's rules
   {
     companionId: 'monika',
@@ -250,15 +298,31 @@ const CHARACTER_RULES: CharacterResponseRule[] = [
     category: ResponseCategory.LOVE,
     patterns: ['love', 'like', 'crush'],
     responses: [
-      "I understand your feelings, but let's focus on your goals.",
-      "I care about helping you succeed in your endeavors.",
-      "Let's channel that energy into achieving your objectives."
+      "I care deeply about helping you succeed! Let's focus on your goals.",
+      "Your growth and productivity are important to me! Let's work together.",
+      "I value our connection! It helps us work better together on your goals!"
     ],
     priority: 2,
     cooldown: 30000,
-    personalityTraits: ['caring', 'self-aware'],
+    personalityTraits: ['caring', 'focused'],
     mood: 'thoughtful',
-    intensity: 'high'
+    intensity: 'medium'
+  },
+  {
+    companionId: 'monika',
+    category: ResponseCategory.ERROR,
+    patterns: [],
+    responses: [
+      "Let's refocus our conversation. What would you like to accomplish today?",
+      "I think we should take a different approach here. What goals are you working on?",
+      "I believe we could be more productive with a new direction. What's on your priority list today?",
+      "Let's bring our conversation back to your productivity goals. What can I help you with?",
+      "I think we should shift our focus to something more constructive. What tasks are you tackling today?"
+    ],
+    priority: 5,
+    personalityTraits: ['analytical', 'supportive'],
+    mood: 'focused',
+    intensity: 'medium'
   },
   // Common rules for all characters
   {

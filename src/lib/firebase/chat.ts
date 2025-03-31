@@ -12,7 +12,8 @@ import {
   updateDoc, 
   getDoc,
   increment,
-  setDoc
+  setDoc,
+  writeBatch
 } from 'firebase/firestore';
 import { updateUserLastActive } from './user';
 import { auth } from '@/lib/firebase';
@@ -46,10 +47,10 @@ export interface ChatUsage {
 const MAX_CHAT_HISTORY = 50;
 
 // Maximum messages per day
-export const MAX_DAILY_MESSAGES = 50;
+export const MAX_DAILY_MESSAGES = 100;
 
 // Constants for token management
-const MAX_DAILY_TOKENS = 20000; // Per user daily limit
+const MAX_DAILY_TOKENS = 100000; // Increased from 20000 to 100000 per user daily limit
 
 interface TokenUsage {
   dailyTokens: number;
@@ -395,6 +396,22 @@ export const clearChatHistory = async (
   companionId: CompanionId
 ): Promise<void> => {
   try {
+    console.log(`🧹 Chat.ts: Clearing chat history for user ${userId} with companion ${companionId}`);
+    
+    // Log current auth state
+    if (auth.currentUser) {
+      console.log(`🔑 Chat.ts: Current auth user when clearing chat: ${auth.currentUser.uid}`);
+      
+      // Check if user IDs match
+      if (auth.currentUser.uid !== userId) {
+        console.warn(`⚠️ Chat.ts: Auth user ID (${auth.currentUser.uid}) doesn't match requested user ID (${userId})`);
+        throw new Error('User ID mismatch');
+      }
+    } else {
+      console.warn('⚠️ Chat.ts: No authenticated user found when clearing chat history');
+      throw new Error('No authenticated user');
+    }
+    
     const chatCollection = collection(db, 'users', userId, 'chats');
     const q = query(
       chatCollection,
@@ -402,18 +419,51 @@ export const clearChatHistory = async (
     );
     
     const querySnapshot = await getDocs(q);
+    console.log(`🧹 Chat.ts: Found ${querySnapshot.size} messages to clear`);
     
-    // Delete each document
-    const deletePromises = querySnapshot.docs.map(async (document) => {
-      await updateDoc(doc(db, 'users', userId, 'chats', document.id), {
+    if (querySnapshot.empty) {
+      console.log('✅ Chat.ts: No messages to clear, chat is already empty');
+      return;
+    }
+    
+    // Instead of updating each document one by one (which can be expensive),
+    // we'll create a batch update to mark all messages as deleted
+    const batch = writeBatch(db);
+    
+    // Add each message to the batch update
+    querySnapshot.docs.forEach((document) => {
+      batch.update(doc(db, 'users', userId, 'chats', document.id), {
         deleted: true
       });
     });
     
-    await Promise.all(deletePromises);
+    // Commit the batch
+    await batch.commit();
+    console.log(`✅ Chat.ts: Successfully marked ${querySnapshot.size} messages as deleted`);
+    
+    // Reset chat usage stats
+    try {
+      const usageRef = doc(db, `users/${userId}/settings/chatUsage`);
+      await updateDoc(usageRef, {
+        dailyMessageCount: 0
+      });
+      console.log('✅ Chat.ts: Reset daily message count after clearing chat');
+    } catch (usageError) {
+      console.error('❌ Chat.ts: Error resetting usage count:', usageError);
+      // Continue even if this fails
+    }
+    
+    // Clear local cache of message IDs for this user/companion
+    const userCompanionPrefix = `${userId}_${companionId}_`;
+    for (const key of recentMessageContents.keys()) {
+      if (key.startsWith(userCompanionPrefix)) {
+        recentMessageContents.delete(key);
+      }
+    }
+    console.log('✅ Chat.ts: Cleared message content cache for this chat');
     
   } catch (error) {
-    console.error('Error clearing chat history:', error);
+    console.error('❌ Chat.ts: Error clearing chat history:', error);
     throw error;
   }
 };

@@ -17,8 +17,7 @@ import { ACHIEVEMENTS, Achievement } from '@/lib/firebase/achievements';
 import { refreshGoals, assignRandomCompanionGoal, updateGoal as updateGoalFirebase, removeGoal as removeGoalFirebase } from '@/lib/firebase/goals';
 import { getCharacterDotColor, getCharacterColors } from '@/components/Common/CharacterColor/CharacterColor';
 import { GoalForm, GoalSection, isSystemGoal, isUserCreatedGoal, getTomorrowDateString, getDeadlineDate } from '@/components/Goals';
-import AchievementNotification from '@/components/Common/Notifications/AchievementNotification';
-import GoalNotification from '@/components/Common/Notifications/GoalNotification';
+import { useGoalNotifications, useAchievementNotifications } from '@/components/Common/Notifications';
 
 export default function GoalsPage() {
   const { user, isLoading } = useAuthStore();
@@ -49,17 +48,51 @@ export default function GoalsPage() {
   // Add state for goal refreshing
   const [isRefreshing, setIsRefreshing] = useState(false);
   
-  // Add state for goal notifications
-  const [goalNotification, setGoalNotification] = useState<{
-    type: 'daily' | 'weekly' | 'challenge' | 'custom';
-    title: string;
-  } | null>(null);
+  // Get notification hooks
+  const { 
+    showGoalAdded, 
+    showGoalUpdated, 
+    showGoalCompleted 
+  } = useGoalNotifications();
   
-  // Add state for achievement notifications
-  const [showAchievement, setShowAchievement] = useState<Achievement | null>(null);
+  const { showAchievement } = useAchievementNotifications();
   
   // First, add a state for the collapsible Completed Goals section
   const [completedGoalsCollapsed, setCompletedGoalsCollapsed] = useState(false);
+  
+  // Move this function before the useEffect that uses it
+  // Function to show goal notification using the notification hook
+  const showGoalNotification = useCallback((type: 'daily' | 'weekly' | 'challenge' | 'custom', title: string, action: 'added' | 'updated' | 'completed' = 'added') => {
+    // Create a goal object with the notification data
+    const notificationGoal: Goal = {
+      id: `notification_${Date.now()}`,
+      title,
+      description: type === 'challenge' ? 
+        'This is a special challenge from your companion!' : 
+        type === 'daily' ? 
+        'Complete daily goals to build consistency' : 
+        type === 'weekly' ? 
+        'Weekly goals help you achieve longer-term objectives' : 
+        'Custom goals help you track personal objectives',
+      targetMinutes: 0,
+      currentMinutes: 0,
+      deadline: Timestamp.now(),
+      createdAt: Timestamp.now(),
+      completed: false,
+      type
+    };
+    
+    const companionId = userData?.settings?.selectedCompanion || undefined;
+    
+    // Determine which notification to show based on action
+    if (action === 'added') {
+      showGoalAdded(notificationGoal);
+    } else if (action === 'updated') {
+      showGoalUpdated(notificationGoal);
+    } else if (action === 'completed') {
+      showGoalCompleted(notificationGoal, companionId);
+    }
+  }, [userData, showGoalAdded, showGoalUpdated, showGoalCompleted]);
   
   // Load goal achievements if not already loaded
   useEffect(() => {
@@ -135,14 +168,29 @@ export default function GoalsPage() {
         // First refresh all goals to clear any expired ones
         await refreshAllGoals(userId);
         
-        // Add a default "Get Started" goal
-        await addGoal(userId, {
-          title: "Complete Your First Focus Session",
-          description: "Try the timer feature to complete a focus session",
-          targetMinutes: 25,
-          deadline: Timestamp.fromDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)), // 7 days from now
-          type: 'custom'
-        });
+        // Get current user data to check existing goals
+        const currentData = await getUserDocument(userId);
+        
+        // Check if the first session goal already exists (completed or not)
+        const hasFirstSessionGoal = currentData?.goals?.list?.some(goal => 
+          goal.title === "Complete Your First Focus Session" || 
+          (goal.description?.includes("first focus session") && goal.type === 'custom')
+        );
+        
+        // Only add the default goal if it doesn't exist yet
+        if (!hasFirstSessionGoal) {
+          console.log('Adding first focus session goal');
+          // Add a default "Get Started" goal
+          await addGoal(userId, {
+            title: "Complete Your First Focus Session",
+            description: "Try the timer feature to complete a focus session",
+            targetMinutes: 25,
+            deadline: Timestamp.fromDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)), // 7 days from now
+            type: 'custom'
+          });
+        } else {
+          console.log('First focus session goal already exists, skipping creation');
+        }
         
         console.log('Default goals created successfully');
         return true;
@@ -208,21 +256,81 @@ export default function GoalsPage() {
                        lastUpdated.getFullYear() !== now.getFullYear();
       
       if (isNewDay || hasExpiredGoals) {
+        // Store the current goals count for comparison after refresh
+        const currentDailyGoals = userData.goals?.list?.filter(goal => 
+          goal.type === 'daily' && !goal.completed && getDeadlineDate(goal.deadline) > now
+        ).length || 0;
+        
+        const currentWeeklyGoals = userData.goals?.list?.filter(goal => 
+          goal.type === 'weekly' && !goal.completed && getDeadlineDate(goal.deadline) > now
+        ).length || 0;
+        
+        const currentChallengeGoals = userData.goals?.list?.filter(goal => 
+          goal.type === 'challenge' && !goal.completed && getDeadlineDate(goal.deadline) > now && !goal.companionId
+        ).length || 0;
+        
+        const currentExpiredGoals = userData.goals?.list?.filter(goal => 
+          !goal.completed && getDeadlineDate(goal.deadline) <= now
+        ).length || 0;
+        
         handleRefreshGoals().then(() => {
-          // Show notification about new goals
-          setGoalNotification({
-            type: 'daily',
-            title: 'New goals have been assigned!'
+          // Get updated user data after refresh
+          getUserDocument(user.uid).then(updatedData => {
+            if (!updatedData) return;
+            
+            const newNow = new Date();
+            
+            // Count new goals after refresh
+            const newDailyGoals = updatedData.goals?.list?.filter(goal => 
+              goal.type === 'daily' && !goal.completed && getDeadlineDate(goal.deadline) > newNow
+            ).length || 0;
+            
+            const newWeeklyGoals = updatedData.goals?.list?.filter(goal => 
+              goal.type === 'weekly' && !goal.completed && getDeadlineDate(goal.deadline) > newNow
+            ).length || 0;
+            
+            const newChallengeGoals = updatedData.goals?.list?.filter(goal => 
+              goal.type === 'challenge' && !goal.completed && getDeadlineDate(goal.deadline) > newNow && !goal.companionId
+            ).length || 0;
+            
+            const removedExpiredGoals = currentExpiredGoals;
+            
+            // Create a detailed notification message
+            let notificationTitle = '';
+            
+            if (isNewDay) {
+              notificationTitle = "Daily goals refreshed!";
+            } else if (hasExpiredGoals) {
+              notificationTitle = "Expired goals cleared!";
+            }
+            
+            // Create summary of changes
+            const changes = [];
+            if (newDailyGoals > currentDailyGoals) {
+              changes.push(`${newDailyGoals - currentDailyGoals} new daily goal(s)`);
+            }
+            if (newWeeklyGoals > currentWeeklyGoals) {
+              changes.push(`${newWeeklyGoals - currentWeeklyGoals} new weekly goal(s)`);
+            }
+            if (newChallengeGoals > currentChallengeGoals) {
+              changes.push(`${newChallengeGoals - currentChallengeGoals} new challenge goal(s)`);
+            }
+            if (removedExpiredGoals > 0) {
+              changes.push(`${removedExpiredGoals} expired goal(s) removed`);
+            }
+            
+            // Add summary to notification
+            if (changes.length > 0) {
+              notificationTitle += " " + changes.join(', ');
+            }
+            
+            // Show notification about new goals using the hook
+            showGoalNotification('daily', notificationTitle.trim(), 'added');
           });
-          
-          // Clear notification after 5 seconds
-          setTimeout(() => {
-            setGoalNotification(null);
-          }, 5000);
         });
       }
     }
-  }, [user, userData, handleRefreshGoals]);
+  }, [user, userData, handleRefreshGoals, showGoalNotification]);
   
   // Update the handleRequestCompanionGoal function to show the correct notification
   const handleRequestCompanionGoal = async () => {
@@ -231,18 +339,35 @@ export default function GoalsPage() {
     try {
       setIsRefreshing(true);
       const selectedCompanion = userData?.settings?.selectedCompanion || 'sayori';
+      
+      // Check if the user already has an active challenge from this companion
+      const hasUnfinishedCompanionGoal = userData?.goals?.list?.some(goal => 
+        goal.companionId === selectedCompanion && 
+        goal.type === 'challenge' && 
+        !goal.completed && 
+        getDeadlineDate(goal.deadline) > new Date()
+      );
+      
+      if (hasUnfinishedCompanionGoal) {
+        // Show notification that user already has an active challenge
+        showGoalNotification(
+          'challenge', 
+          `You already have an active challenge from ${selectedCompanion.charAt(0).toUpperCase() + selectedCompanion.slice(1)}. Complete it first!`, 
+          'updated'
+        );
+        setIsRefreshing(false);
+        return;
+      }
+      
+      // If no active challenge, proceed with assigning a new one
       const result = await assignRandomCompanionGoal(user.uid, selectedCompanion);
       
-      // Show notification about new companion goal
-      setGoalNotification({
-        type: 'challenge',
-        title: `${selectedCompanion.charAt(0).toUpperCase() + selectedCompanion.slice(1)} assigned you a new challenge: ${result.title}`
-      });
-      
-      // Clear notification after 5 seconds
-      setTimeout(() => {
-        setGoalNotification(null);
-      }, 5000);
+      // Show notification about new companion goal using the hook
+      showGoalNotification(
+        'challenge', 
+        `${selectedCompanion.charAt(0).toUpperCase() + selectedCompanion.slice(1)} assigned you a new challenge: ${result.title}`, 
+        'added'
+      );
       
       // Fetch updated user data
       const data = await getUserDocument(user.uid);
@@ -391,11 +516,11 @@ export default function GoalsPage() {
     // Find the goal to display in notification
     const goal = userData?.goals?.list.find(g => g.id === goalId);
     if (goal) {
-      // Show goal completion notification
-      setGoalNotification({
-        type: goal.type as 'daily' | 'weekly' | 'challenge' | 'custom',
-        title: goal.title
-      });
+      // Get companion ID safely
+      const companionId = userData?.settings?.selectedCompanion || undefined;
+      
+      // Show goal completion notification using the hook
+      showGoalCompleted(goal, companionId);
     }
     
     // Mark goal as complete in store
@@ -414,19 +539,19 @@ export default function GoalsPage() {
         // First goal completed
         const firstGoalAchievement = achievements.find(a => a.id === 'your_first_goal');
         if (firstGoalAchievement) {
-          setShowAchievement(firstGoalAchievement);
+          showAchievement(firstGoalAchievement);
         }
       } else if (totalCompleted >= ACHIEVEMENTS.goals.achiever.requirement.value) {
         // Achiever (10 goals)
         const achieverAchievement = achievements.find(a => a.id === 'achiever');
         if (achieverAchievement && !achieverAchievement.unlockedAt) {
-          setShowAchievement(achieverAchievement);
+          showAchievement(achieverAchievement);
         }
       } else if (totalCompleted >= ACHIEVEMENTS.goals.overachiever.requirement.value) {
         // Overachiever (25 goals)
         const overachieverAchievement = achievements.find(a => a.id === 'overachiever');
         if (overachieverAchievement && !overachieverAchievement.unlockedAt) {
-          setShowAchievement(overachieverAchievement);
+          showAchievement(overachieverAchievement);
         }
       }
       
@@ -436,7 +561,7 @@ export default function GoalsPage() {
         if (challengeCount >= ACHIEVEMENTS.goals.challenge_master.requirement.value) {
           const challengeMasterAchievement = achievements.find(a => a.id === 'challenge_master');
           if (challengeMasterAchievement && !challengeMasterAchievement.unlockedAt) {
-            setShowAchievement(challengeMasterAchievement);
+            showAchievement(challengeMasterAchievement);
           }
         }
       }
@@ -456,27 +581,6 @@ export default function GoalsPage() {
         >
           Your Goals
         </motion.h1>
-        
-        {goalNotification && (
-          <motion.div 
-            className="mb-4 p-3 rounded-lg text-center"
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            style={{ 
-              backgroundColor: colors.secondary,
-              color: colors.text
-            }}
-          >
-            <p className="font-[Halogen]">
-              {goalNotification.type === 'daily' && '☀️ '}
-              {goalNotification.type === 'weekly' && '📅 '}
-              {goalNotification.type === 'challenge' && '🏆 '}
-              {goalNotification.type === 'custom' && '🌟 '}
-              {goalNotification.title}
-            </p>
-          </motion.div>
-        )}
         
         <div className="mb-6 sticky top-0 z-10 bg-opacity-90 backdrop-blur-sm py-2">
           {!showAddForm && !editingGoal ? (
@@ -628,34 +732,6 @@ export default function GoalsPage() {
             onComplete={() => {}}
             onDelete={handleDeleteGoal}
             isExpired={true}
-          />
-        )}
-        
-        {/* Show goal notification */}
-        {goalNotification && (
-          <GoalNotification
-            goal={{
-              id: '',
-              title: goalNotification.title,
-              description: '',
-              targetMinutes: 0,
-              currentMinutes: 0,
-              deadline: Timestamp.now(),
-              createdAt: Timestamp.now(),
-              completed: true,
-              type: goalNotification.type
-            }}
-            action="completed"
-            companionId={userData?.settings?.selectedCompanion || 'sayori'}
-            onClose={() => setGoalNotification(null)}
-          />
-        )}
-        
-        {/* Show achievement notification */}
-        {showAchievement && (
-          <AchievementNotification
-            achievement={showAchievement}
-            onClose={() => setShowAchievement(null)}
           />
         )}
       </main>

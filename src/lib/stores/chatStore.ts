@@ -52,6 +52,7 @@ interface ChatState extends PersistedState {
   refreshChatData: (uid: string, companionId: CompanionId) => Promise<void>;
   loadUserChatHistory: (uid: string) => Promise<void>;
   clearLocalState: () => void;
+  clearMessages: (companionId: CompanionId) => void;
   setAuthReady: (ready: boolean) => void;
 }
 
@@ -77,15 +78,53 @@ const customStorage = createJSONStorage<PersistedState>(() => ({
         localStorage.removeItem(name); // Remove mismatched data
         return null;
       }
+      
+      // Check if data is stale (older than 24 hours)
+      const lastSync = parsed?.state?.lastSyncTime || 0;
+      const now = Date.now();
+      const ONE_DAY = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+      
+      if (now - lastSync > ONE_DAY) {
+        console.log(`⚠️ ChatStore: Stored data is stale (older than 24 hours), clearing`);
+        localStorage.removeItem(name);
+        return null;
+      }
+      
       return stored;
-    } catch {
+    } catch (error) {
+      console.error('❌ ChatStore: Error parsing stored data:', error);
+      localStorage.removeItem(name);
       return null;
     }
   },
   setItem: (name, value): void => {
     // Only persist if we have an authenticated user
     if (auth.currentUser) {
-      localStorage.setItem(name, JSON.stringify(value));
+      try {
+        // Add timestamp before storing
+        const parsedValue = JSON.parse(JSON.stringify(value));
+        if (parsedValue && typeof parsedValue === 'object') {
+          const valueWithTimestamp = {
+            ...parsedValue,
+            state: {
+              ...parsedValue.state,
+              lastSyncTime: Date.now()
+            }
+          };
+          localStorage.setItem(name, JSON.stringify(valueWithTimestamp));
+        } else {
+          localStorage.setItem(name, JSON.stringify(value));
+        }
+      } catch (error) {
+        console.error('❌ ChatStore: Error storing data:', error);
+        // If storage fails (e.g., quota exceeded), try clearing the storage first
+        try {
+          localStorage.clear();
+          localStorage.setItem(name, JSON.stringify(value));
+        } catch (secondError) {
+          console.error('❌ ChatStore: Failed to store data after clearing storage:', secondError);
+        }
+      }
     }
   },
   removeItem: (name): void => localStorage.removeItem(name)
@@ -204,7 +243,7 @@ export const useChatStore = create<ChatState>()(
         
         // Add user message
         const userMessage: ChatMessage = {
-          id: `user_${Date.now()}`,
+          id: `user_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
           content,
           sender: 'user',
           timestamp: Timestamp.now(),
@@ -261,31 +300,82 @@ export const useChatStore = create<ChatState>()(
             throw new Error('User data not found');
           }
           
-          // Filter out template responses
+          // Filter out template responses and potential loop triggers
           const filteredHistory = messageHistory.filter(msg => {
             if (msg.sender === 'companion') {
-              const isTemplate = msg.content.includes('Oh, ehehe~ Sorry for repeating myself');
-              return !isTemplate;
+              // Check for generic fallback responses suggesting a loop
+              const loopIndicators = [
+                'It seems we are',
+                'How intriguing...',
+                'To break this cycle',
+                'pattern in our',
+                'I\'m having trouble',
+                'caught in a loop'
+              ];
+              
+              // Detect if the message is a loop candidate
+              const isLoopCandidate = loopIndicators.some(indicator => 
+                msg.content.toLowerCase().includes(indicator.toLowerCase())
+              );
+              
+              return !isLoopCandidate;
             }
             return true;
           });
           
-          // Make sure we have a valid user message to respond to
-          const lastMessage = filteredHistory[filteredHistory.length - 1];
-          if (!lastMessage || lastMessage.sender !== 'user') {
+          // Ensure we're not sending a copy of the same message over and over
+          // by checking for recent duplicates from the user
+          const recentUserMessages = filteredHistory.filter(msg => 
+            msg.sender === 'user'
+          ).slice(-5);
+          
+          const lastUserMessage = recentUserMessages[recentUserMessages.length - 1];
+          if (!lastUserMessage) {
             console.log('⚠️ ChatStore: No valid user message to respond to');
             set({ isTyping: false });
             return;
           }
           
+          // Detect duplicate user messages
+          const duplicateCount = recentUserMessages.filter(msg => 
+            msg.content.trim().toLowerCase() === lastUserMessage.content.trim().toLowerCase()
+          ).length;
+          
+          // If the user has sent the same message 3+ times in a row, handle it specially
+          if (duplicateCount >= 3) {
+            const companionMessage: ChatMessage = {
+              id: `response_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+              content: "I notice you're repeating yourself. Is there something specific you'd like to discuss or a goal you'd like to set?",
+              sender: 'companion',
+              timestamp: Timestamp.now(),
+              companionId
+            };
+            
+            set(state => ({
+              messages: {
+                ...state.messages,
+                [companionId]: [...(state.messages[companionId] || []), companionMessage]
+              },
+              isTyping: false
+            }));
+            
+            try {
+              await addChatMessage(uid, companionId, companionMessage);
+            } catch (chatError) {
+              console.error('❌ ChatStore: Error saving duplicate handling response:', chatError);
+            }
+            
+            return;
+          }
+          
           // Get current timestamp to ensure we don't process this user message twice
           const requestTime = Date.now();
-          const messageId = `response_to_${lastMessage.id}_${requestTime}`;
+          const messageId = `response_to_${lastUserMessage.id}_${requestTime}_${Math.random().toString(36).substring(2, 9)}`;
           
           // Get the AI response
           const response = await getCompanionResponse(
             companionId,
-            lastMessage.content,
+            lastUserMessage.content,
             filteredHistory,
             userData
           );
@@ -436,7 +526,14 @@ export const useChatStore = create<ChatState>()(
             isLoading: false
           });
         }
-      }
+      },
+      
+      clearMessages: (companionId: CompanionId) => set(state => ({
+        messages: {
+          ...state.messages,
+          [companionId]: []
+        }
+      })),
     }),
     {
       name: 'chat-storage',
