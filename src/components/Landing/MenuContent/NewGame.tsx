@@ -6,6 +6,9 @@ import Card from "@/components/Common/Card/LandingCard";
 import { imagePaths } from "@/components/Common/Paths/ImagePath";
 import Button from "@/components/Common/Button/Button";
 import { useRouter } from "next/navigation";
+import { CompanionId } from "@/lib/firebase/companion";
+import { getCharacterColors } from "@/components/Common/CharacterColor/CharacterColor";
+import { playSoundEffect } from "@/components/Common/Music/BackgroundMusic";
 
 interface Character {
   id: string;
@@ -53,34 +56,48 @@ interface NewGameProps {
 export default function NewGame({ onCharacterSelect }: NewGameProps) {
   const router = useRouter();
   const [selectedCharacter, setSelectedCharacter] = useState<string | null>(null);
+  
+  const characterColors = selectedCharacter 
+    ? getCharacterColors(selectedCharacter as CompanionId) 
+    : getCharacterColors('sayori');
 
   const handleCharacterSelect = (characterId: string) => {
     setSelectedCharacter(characterId);
     onCharacterSelect(characterId);
+    playSoundEffect('click');
   };
 
   const handleStartJourney = () => {
     if (selectedCharacter) {
+      playSoundEffect('click');
       router.push(`/auth?mode=signup&companion=${selectedCharacter}`);
     }
   };
 
   const menuContent = (
-    <div className="p-6">
-      <h2 className="text-2xl font-[Riffic] text-pink-700 mb-4">Choose Your Companion!</h2>
-      <p className="text-base text-pink-900 mb-6">
+    <div className="p-6 bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border-2" 
+      style={{ borderColor: characterColors.primary }}>
+      <h2 className="text-2xl font-[Riffic] mb-4 text-center" style={{ color: characterColors.primary }}>
+        Choose Your Companion!
+      </h2>
+      <p className="text-base mb-6 text-center" style={{ color: characterColors.text }}>
         {selectedCharacter 
           ? `Would you like ${characters.find(c => c.id === selectedCharacter)?.name} to be your companion?`
           : "Click on a character to select them as your companion!"}
       </p>
 
-      <div className="flex justify-between items-center mb-8">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         {characters.map((char) => (
           <motion.div
             key={char.id}
-            className={`relative cursor-pointer flex flex-col items-center
-              ${selectedCharacter === char.id ? 'scale-110' : 'hover:scale-105'}`}
-            whileHover={{ scale: selectedCharacter === char.id ? 1.1 : 1.05 }}
+            className={`relative cursor-pointer flex flex-col items-center p-2 rounded-lg transition-all
+              ${selectedCharacter === char.id ? 'bg-white/80 shadow-md' : 'hover:bg-white/50'}`}
+            style={{ 
+              border: selectedCharacter === char.id 
+                ? `2px solid ${getCharacterColors(char.id as CompanionId).primary}` 
+                : '2px solid transparent',
+            }}
+            whileHover={{ scale: 1.05 }}
             onClick={() => handleCharacterSelect(char.id)}
           >
             <motion.img
@@ -92,8 +109,12 @@ export default function NewGame({ onCharacterSelect }: NewGameProps) {
                 opacity: selectedCharacter && selectedCharacter !== char.id ? 0.6 : 1
               }}
             />
-            <p className={`text-xs font-[Riffic] text-center
-              ${selectedCharacter === char.id ? 'text-pink-700' : 'text-pink-500'}`}>
+            <p 
+              className="text-xs font-[Riffic] text-center"
+              style={{ 
+                color: getCharacterColors(char.id as CompanionId).primary 
+              }}
+            >
               {char.name}
             </p>
           </motion.div>
@@ -110,11 +131,16 @@ export default function NewGame({ onCharacterSelect }: NewGameProps) {
             label="Begin Your Journey" 
             onClick={handleStartJourney}
             className="text-lg px-8 py-3 shadow-lg hover:scale-105 transform transition-all"
+            companionId={selectedCharacter as CompanionId}
           />
         </motion.div>
       )}
     </div>
   );
 
-  return <Card>{menuContent}</Card>;
+  return (
+    <div className="w-full">
+      {menuContent}
+    </div>
+  );
 }

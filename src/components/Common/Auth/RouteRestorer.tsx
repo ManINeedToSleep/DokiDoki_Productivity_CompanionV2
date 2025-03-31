@@ -4,13 +4,16 @@ import { useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { auth } from '@/lib/firebase';
 
+// Define public routes that don't require authentication
+const publicRoutes = ['/', '/auth'];
+
 export default function RouteRestorer() {
   const router = useRouter();
   const pathname = usePathname();
 
   useEffect(() => {
     // Store current path when it changes
-    if (pathname && pathname !== '/auth') {
+    if (pathname && !publicRoutes.includes(pathname)) {
       localStorage.setItem('lastRoute', pathname);
     }
   }, [pathname]);
@@ -23,8 +26,8 @@ export default function RouteRestorer() {
         if (lastRoute && pathname === '/dashboard') {
           router.push(lastRoute);
         }
-      } else if (pathname !== '/auth') {
-        // If not authenticated and not on auth page, redirect to auth
+      } else if (!publicRoutes.includes(pathname)) {
+        // If not authenticated and not on a public page, redirect to auth
         router.push('/auth');
       }
     });

@@ -16,7 +16,7 @@
     "framer-motion": "^12.4.7",
     "gpt-tokenizer": "^2.9.0",
     "js-cookie": "^3.0.5",
-    "next": "15.1.7",
+    "next": "^15.2.3",
     "openai": "^4.87.3",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
@@ -38,3 +38,6 @@
     "typescript": "^5"
   }
 }
+
+
+
