@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Achievement } from '@/lib/firebase/achievements';
 
@@ -20,13 +20,20 @@ export default function AchievementNotification({
   const [visible, setVisible] = useState(true);
   const [showDetails, setShowDetails] = useState(false);
 
+  const handleClose = useCallback(() => {
+    setVisible(false);
+    if (onClose) {
+      setTimeout(onClose, 300); // Wait for exit animation
+    }
+  }, [onClose]);
+
   // Auto-close after duration
   useEffect(() => {
     const timer = setTimeout(() => {
       handleClose();
     }, duration);
     return () => clearTimeout(timer);
-  }, [duration]);
+  }, [duration, handleClose]);
 
   // Show details after a delay
   useEffect(() => {
@@ -35,13 +42,6 @@ export default function AchievementNotification({
     }, 1000);
     return () => clearTimeout(timer);
   }, []);
-
-  const handleClose = () => {
-    setVisible(false);
-    if (onClose) {
-      setTimeout(onClose, 300); // Wait for exit animation
-    }
-  };
 
   // Position styles
   const getPositionStyles = () => {

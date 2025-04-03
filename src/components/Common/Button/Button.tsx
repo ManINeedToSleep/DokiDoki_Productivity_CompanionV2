@@ -2,8 +2,9 @@
 
 import { CSSProperties } from 'react';
 import { CompanionId } from '@/lib/firebase/companion';
+import { IconType } from 'react-icons/lib';
 
-interface ButtonProps {
+export interface ButtonProps {
   label: string;
   onClick?: () => void;
   disabled?: boolean;
@@ -11,6 +12,7 @@ interface ButtonProps {
   type?: 'button' | 'submit' | 'reset';
   style?: CSSProperties;
   companionId?: CompanionId;
+  Icon?: IconType;
 }
 
 export default function Button({ 
@@ -20,7 +22,8 @@ export default function Button({
   className = '',
   type = 'button',
   style,
-  companionId = 'sayori'
+  companionId = 'sayori',
+  Icon
 }: ButtonProps) {
   // Get character-specific colors
   const getCharacterColors = (id: CompanionId) => {
@@ -88,6 +91,7 @@ export default function Button({
         ${className}
       `}
     >
+      {Icon && <Icon className={label ? "mr-2 inline-block" : ""} size={16} />}
       {label}
     </button>
   );

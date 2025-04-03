@@ -5,7 +5,7 @@ import { motion } from 'framer-motion';
 import { auth } from '@/lib/firebase';
 import { useUserData } from '@/lib/stores/userStore';
 import { CompanionId } from '@/lib/firebase/companion';
-import { ChatMessageType, getChatHistory, MAX_DAILY_MESSAGES } from '@/lib/firebase/chat';
+import { ChatMessageType, getChatHistory } from '@/lib/firebase/chat';
 import ChatContainer from '@/components/Chat/ChatContainer';
 import ChatStats from '@/components/Chat/ChatStats';
 import PolkaDotBackground from '@/components/Common/BackgroundCustom/PolkadotBackground';
@@ -179,26 +179,6 @@ export default function ChatPage() {
                   </div>
                 </div>
               </div>
-            </motion.div>
-
-            {/* Daily limit info */}
-            <motion.div
-              className="bg-white rounded-xl shadow-sm p-4"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.4 }}
-            >
-              <h2 className="text-lg font-[Riffic] mb-3" style={{ color: colors.heading }}>
-                Chat Information
-              </h2>
-              <p className="text-sm font-[Halogen] text-gray-600">
-                You can send up to {MAX_DAILY_MESSAGES} messages per day to your companion.
-                Messages reset at midnight in your local time.
-              </p>
-              <p className="text-sm font-[Halogen] mt-2 text-gray-600">
-                Building a strong relationship with your companion unlocks special
-                achievements and rewards!
-              </p>
             </motion.div>
           </div>
         </div>

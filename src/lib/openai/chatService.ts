@@ -15,10 +15,10 @@ import {
 
 
 // Maximum tokens to use for context
-const MAX_CONTEXT_TOKENS = 4000;
+const MAX_CONTEXT_TOKENS = 8000;
 
 // Maximum messages to include in context
-const MAX_CONTEXT_MESSAGES = 20;
+const MAX_CONTEXT_MESSAGES = 40;
 
 // API request deduplication cache
 const recentRequestCache = new Map<string, {
@@ -39,10 +39,10 @@ setInterval(() => {
 }, 30000); // Check every 30 seconds
 
 // Constants for token management
-const MAX_TOKENS_PER_REQUEST = 4000;
-const MAX_HISTORY_TOKENS = 2000;
-const MAX_RESPONSE_TOKENS = 500;
-const TOKEN_SAFETY_MARGIN = 100;
+const MAX_TOKENS_PER_REQUEST = 8000;
+const MAX_HISTORY_TOKENS = 6000;
+const MAX_RESPONSE_TOKENS = 1000;
+const TOKEN_SAFETY_MARGIN = 200;
 
 // Helper function to count tokens
 function countTokens(text: string): number {
@@ -429,9 +429,32 @@ export async function getCompanionResponse(
     // Calculate tokens for the current request
     const userMessageTokens = countTokens(compressedUserMessage);
     
+    // Filter out potential loops before truncating
+    const filteredHistory = messageHistory.filter(msg => {
+      // Skip obvious loop indicator messages to prevent reinforcement
+      if (msg.sender === 'companion') {
+        const loopIndicators = [
+          'It seems we are',
+          'How intriguing...',
+          'To break this cycle',
+          'pattern in our',
+          'I\'m having trouble',
+          'caught in a loop'
+        ];
+        
+        // Check if the message contains any loop indicators
+        const isLoopCandidate = loopIndicators.some(indicator => 
+          msg.content.toLowerCase().includes(indicator.toLowerCase())
+        );
+        
+        return !isLoopCandidate;
+      }
+      return true;
+    });
+    
     // Truncate message history to fit within token limits
     const truncatedHistory = truncateMessageHistory(
-      messageHistory, 
+      filteredHistory, 
       MAX_HISTORY_TOKENS - userMessageTokens - TOKEN_SAFETY_MARGIN
     );
 
