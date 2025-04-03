@@ -46,8 +46,12 @@ interface PendingCompanionUpdate {
 interface PendingSettingsUpdate {
   type: 'updateSettings';
   uid: string;
-  updateType: 'timer' | 'theme' | 'selectedCompanion';
-  data: UserDocument['settings']['timerSettings'] | UserDocument['settings']['theme'] | CompanionId;
+  updateType: 'timer' | 'theme' | 'selectedCompanion' | 'audio';
+  data: UserDocument['settings']['timerSettings'] | UserDocument['settings']['theme'] | CompanionId | {
+    musicEnabled: boolean;
+    soundEffectsEnabled: boolean;
+    volume: number;
+  };
 }
 
 interface PendingGoalUpdate {
@@ -83,6 +87,11 @@ interface UserState {
   incrementCompletedGoals: (uid: string, isChallenge?: boolean) => void;
   syncWithFirebase: (uid: string, force?: boolean) => Promise<void>;
   refreshUserData: (uid: string) => Promise<void>;
+  updateAudioSettings: (uid: string, settings: {
+    musicEnabled: boolean;
+    soundEffectsEnabled: boolean;
+    volume: number;
+  }) => void;
 }
 
 // Helper function to calculate updated stats
@@ -625,18 +634,22 @@ export const useUserStore = create<UserState>()(
                 break;
                 
               case 'updateSettings':
-                if (update.updateType === 'timer') {
-                  // Type guard to ensure we have timer settings
-                  const timerSettings = update.data as UserDocument['settings']['timerSettings'];
-                  await updateTimerSettingsFirebase(update.uid, timerSettings);
-                } else if (update.updateType === 'theme') {
-                  // Type guard to ensure we have theme settings
-                  const themeSettings = update.data as UserDocument['settings']['theme'];
-                  await updateThemeSettingsFirebase(update.uid, themeSettings);
-                } else if (update.updateType === 'selectedCompanion') {
-                  // Type guard to ensure we have a companion ID
-                  const companionId = update.data as CompanionId;
-                  await updateSelectedCompanionFirebase(update.uid, companionId);
+                switch (update.updateType) {
+                  case 'timer':
+                    await updateTimerSettingsFirebase(update.uid, update.data as UserDocument['settings']['timerSettings']);
+                    break;
+                  case 'theme':
+                    await updateThemeSettingsFirebase(update.uid, update.data as UserDocument['settings']['theme']);
+                    break;
+                  case 'selectedCompanion':
+                    await updateSelectedCompanionFirebase(update.uid, update.data as CompanionId);
+                    break;
+                  case 'audio':
+                    const userRef = doc(db, 'users', update.uid);
+                    await updateDoc(userRef, {
+                      'settings.audioSettings': update.data
+                    });
+                    break;
                 }
                 break;
                 
@@ -705,6 +718,34 @@ export const useUserStore = create<UserState>()(
             error: error instanceof Error ? error.message : 'Unknown error refreshing user data'
           });
         }
+      },
+      
+      updateAudioSettings: (uid, settings) => {
+        set((state) => {
+          if (!state.user) return state;
+          
+          return {
+            user: {
+              ...state.user,
+              settings: {
+                ...state.user.settings,
+                audioSettings: settings
+              }
+            },
+            pendingUpdates: [
+              ...state.pendingUpdates,
+              { 
+                type: 'updateSettings', 
+                uid, 
+                updateType: 'audio',
+                data: settings
+              }
+            ]
+          };
+        });
+        
+        // Trigger sync to Firebase
+        get().syncWithFirebase(uid);
       }
     }),
     {

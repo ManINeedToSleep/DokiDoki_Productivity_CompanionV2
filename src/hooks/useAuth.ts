@@ -67,23 +67,17 @@ export function useAuth() {
   // Check if user is authenticated
   const isAuthenticated = !!user;
 
-  // Redirect to dashboard if already authenticated
-  const redirectIfAuthenticated = (path = '/dashboard') => {
-    useEffect(() => {
-      if (user && !isLoading) {
-        router.push(path);
-      }
-    }, [user, isLoading, router, path]);
-  };
+  // Redirect to dashboard if authenticated
+  useEffect(() => {
+    // This effect is for current component only - won't be exported
+    // and serves as a placeholder for the proper export below
+  }, []);
 
   // Redirect to login if not authenticated
-  const requireAuth = (path = '/auth') => {
-    useEffect(() => {
-      if (!user && !isLoading) {
-        router.push(path);
-      }
-    }, [user, isLoading, router, path]);
-  };
+  useEffect(() => {
+    // This effect is for current component only - won't be exported
+    // and serves as a placeholder for the proper export below
+  }, []);
 
   return {
     user,
@@ -95,7 +89,15 @@ export function useAuth() {
     signInWithGoogle: enhancedGoogleSignIn,
     logout: enhancedLogout,
     clearError,
-    redirectIfAuthenticated,
-    requireAuth
+    redirectIfAuthenticated: (path = '/dashboard') => {
+      if (user && !isLoading) {
+        router.push(path);
+      }
+    },
+    requireAuth: (path = '/auth') => {
+      if (!user && !isLoading) {
+        router.push(path);
+      }
+    }
   };
 } 

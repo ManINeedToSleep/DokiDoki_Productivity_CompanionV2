@@ -104,13 +104,13 @@ export async function POST(request: NextRequest) {
       
       if (result.flagged) {
         // Find what categories were flagged
-        const flaggedCategories = Object.entries(result.categories)
-          .filter(([_, value]) => value)
-          .map(([key, _]) => key);
+        const flaggedCategories = Object.keys(result.categories)
+          .filter(category => result.categories[category as keyof typeof result.categories])
+          .join(', ');
         
         return NextResponse.json({
           flagged: true,
-          reason: `Content flagged for: ${flaggedCategories.join(', ')}`
+          reason: `Content flagged for: ${flaggedCategories}`
         });
       }
       
@@ -161,10 +161,10 @@ export async function POST(request: NextRequest) {
       // Fallback to basic moderation
       return NextResponse.json(performBasicModeration(text));
     }
-  } catch (error: any) {
+  } catch (error: Error | unknown) {
     console.error("Error in moderation endpoint:", error);
     return NextResponse.json(
-      { error: error.message },
+      { error: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     );
   }

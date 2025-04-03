@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
 import { FaClock } from 'react-icons/fa';
 import SettingsSection from './SettingsSection';
 import SettingsRow from './SettingsRow';
@@ -124,135 +125,177 @@ export default function TimerSettings({ userData, companionId }: TimerSettingsPr
     }
   };
   
+  // Custom number input component
+  const NumberInput = ({ 
+    value, 
+    onChange, 
+    min, 
+    max, 
+    step,
+    label
+  }: { 
+    value: number, 
+    onChange: (value: number) => void, 
+    min: number, 
+    max: number, 
+    step: number,
+    label?: string
+  }) => {
+    return (
+      <motion.div
+        className="relative w-24 h-12"
+        whileHover={{ scale: 1.05 }}
+      >
+        <motion.input
+          type="number"
+          min={min}
+          max={max}
+          step={step}
+          value={value}
+          onChange={(e) => onChange(parseInt(e.target.value) || min)}
+          className="w-full h-full text-center font-[Halogen] rounded-full text-lg shadow-md"
+          style={{ 
+            border: `2px solid ${colors.primary}`,
+            color: colors.text,
+            backgroundColor: `${colors.primary}15`,
+            boxShadow: `0 0 8px ${colors.primary}30`,
+            outline: 'none'
+          }}
+          whileFocus={{ 
+            scale: 1.02,
+            borderColor: colors.primary,
+            boxShadow: `0 0 12px ${colors.primary}50` 
+          }}
+        />
+        {label && (
+          <span 
+            className="absolute -bottom-5 left-0 right-0 text-center text-xs"
+            style={{ color: colors.text }}
+          >
+            {label}
+          </span>
+        )}
+      </motion.div>
+    );
+  };
+  
   return (
     <SettingsSection
       title="Timer Settings"
       description="Customize your productivity timer"
       companionId={companionId}
-      icon={<FaClock size={20} />}
+      icon={<FaClock size={20} style={{ color: colors.primary }} />}
     >
-      <div className="space-y-1">
+      <div className="space-y-4">
         <SettingsRow 
           title="Focus Time"
           description="Duration of each focus session (minutes)"
+          companionId={companionId}
         >
-          <input
-            type="number"
+          <NumberInput
+            value={workMinutes}
+            onChange={setWorkMinutes}
             min={5}
             max={60}
             step={5}
-            value={workMinutes}
-            onChange={(e) => setWorkMinutes(parseInt(e.target.value) || 25)}
-            className="w-20 p-2 border rounded-md text-center font-[Halogen]"
-            style={{ 
-              borderColor: colors.primary, 
-              color: colors.text,
-              backgroundColor: `${colors.primary}10`
-            }}
           />
         </SettingsRow>
         
         <SettingsRow 
           title="Short Break"
           description="Duration of short breaks (minutes)"
+          companionId={companionId}
         >
-          <input
-            type="number"
+          <NumberInput
+            value={shortBreakMinutes}
+            onChange={setShortBreakMinutes}
             min={1}
             max={15}
             step={1}
-            value={shortBreakMinutes}
-            onChange={(e) => setShortBreakMinutes(parseInt(e.target.value) || 5)}
-            className="w-20 p-2 border rounded-md text-center font-[Halogen]"
-            style={{ 
-              borderColor: colors.primary, 
-              color: colors.text,
-              backgroundColor: `${colors.primary}10`
-            }}
           />
         </SettingsRow>
         
         <SettingsRow 
           title="Long Break"
           description="Duration of long breaks (minutes)"
+          companionId={companionId}
         >
-          <input
-            type="number"
+          <NumberInput
+            value={longBreakMinutes}
+            onChange={setLongBreakMinutes}
             min={5}
             max={30}
             step={5}
-            value={longBreakMinutes}
-            onChange={(e) => setLongBreakMinutes(parseInt(e.target.value) || 15)}
-            className="w-20 p-2 border rounded-md text-center font-[Halogen]"
-            style={{ 
-              borderColor: colors.primary, 
-              color: colors.text,
-              backgroundColor: `${colors.primary}10`
-            }}
           />
         </SettingsRow>
         
         <SettingsRow 
           title="Long Break Interval"
           description="Number of sessions before a long break"
+          companionId={companionId}
         >
-          <input
-            type="number"
+          <NumberInput
+            value={longBreakInterval}
+            onChange={setLongBreakInterval}
             min={2}
             max={6}
             step={1}
-            value={longBreakInterval}
-            onChange={(e) => setLongBreakInterval(parseInt(e.target.value) || 4)}
-            className="w-20 p-2 border rounded-md text-center font-[Halogen]"
-            style={{ 
-              borderColor: colors.primary, 
-              color: colors.text,
-              backgroundColor: `${colors.primary}10`
-            }}
           />
         </SettingsRow>
         
         <SettingsRow 
           title="Auto-Start Breaks"
           description="Automatically start breaks when a session ends"
+          companionId={companionId}
         >
           <Toggle
             isOn={autoStartBreaks}
             onToggle={setAutoStartBreaks}
             companionId={companionId}
+            size="lg"
           />
         </SettingsRow>
         
         <SettingsRow 
           title="Auto-Start Sessions"
           description="Automatically start next focus session when a break ends"
+          companionId={companionId}
         >
           <Toggle
             isOn={autoStartPomodoros}
             onToggle={setAutoStartPomodoros}
             companionId={companionId}
+            size="lg"
           />
         </SettingsRow>
         
         <SettingsRow 
           title="Notifications"
           description="Show notifications when sessions start/end"
+          companionId={companionId}
         >
           <Toggle
             isOn={notifications}
             onToggle={setNotifications}
             companionId={companionId}
+            size="lg"
           />
         </SettingsRow>
       </div>
       
-      <div className="mt-6 flex justify-end">
-        <Button
-          label="Save Changes"
-          onClick={handleSaveChanges}
-          disabled={isUpdating || !hasChanges}
-          companionId={companionId}
-        />
+      <div className="mt-8 flex justify-end">
+        <motion.div
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+        >
+          <Button
+            label="Save Changes"
+            onClick={handleSaveChanges}
+            disabled={isUpdating || !hasChanges}
+            companionId={companionId}
+            className="shadow-lg px-6 py-3 font-[Riffic]"
+          />
+        </motion.div>
       </div>
     </SettingsSection>
   );

@@ -10,6 +10,7 @@ import { getCharacterDotColor, getCharacterColors } from '@/components/Common/Ch
 import CompanionSettings from '@/components/Settings/CompanionSettings';
 import TimerSettings from '@/components/Settings/TimerSettings';
 import DataSettings from '@/components/Settings/DataSettings';
+import AudioSettings from '@/components/Settings/AudioSettings';
 
 export default function SettingsPage() {
   const { user, isLoading } = useAuthStore();
@@ -67,6 +68,11 @@ export default function SettingsPage() {
         <div className="grid grid-cols-1 gap-6">
           <CompanionSettings 
             userData={userData} 
+            companionId={selectedCompanion as CompanionId}
+          />
+          
+          <AudioSettings
+            userData={userData}
             companionId={selectedCompanion as CompanionId}
           />
           

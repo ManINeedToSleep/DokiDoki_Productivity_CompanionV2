@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
+import { useState, createContext, useContext, ReactNode } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import DialogueNotification from './DialogueNotification';
 import AchievementNotification from './AchievementNotification';
@@ -9,6 +9,7 @@ import ReminderNotification from './ReminderNotification';
 import { CompanionId } from '@/lib/firebase/companion';
 import { Achievement } from '@/lib/firebase/achievements';
 import { Goal } from '@/lib/firebase/goals';
+import { useAudio } from '@/lib/contexts/AudioContext';
 
 // Notification Types
 export type NotificationType = 
@@ -81,10 +82,36 @@ const NotificationContext = createContext<NotificationContextType | undefined>(u
 // Provider Component
 export function NotificationProvider({ children }: { children: ReactNode }) {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const { playSoundEffect, isSoundEffectsEnabled } = useAudio();
 
   const addNotification = (data: NotificationData): string => {
     const id = uuidv4();
     setNotifications(prev => [...prev, { id, data }]);
+    
+    // Play notification sound based on type
+    if (isSoundEffectsEnabled) {
+      switch (data.type) {
+        case 'achievement':
+          playSoundEffect('giggle');
+          break;
+        case 'dialogue':
+          playSoundEffect('select');
+          break;
+        case 'goal':
+          if (data.action === 'completed') {
+            playSoundEffect('giggle');
+          } else {
+            playSoundEffect('notif');
+          }
+          break;
+        case 'reminder':
+          playSoundEffect('notif');
+          break;
+        default:
+          playSoundEffect('notif');
+      }
+    }
+    
     return id;
   };
 

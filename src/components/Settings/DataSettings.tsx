@@ -1,14 +1,17 @@
 "use client";
 
 import { useState } from 'react';
+import { motion } from 'framer-motion';
 import { FaDatabase, FaTrash, FaDownload, FaRedo } from 'react-icons/fa';
 import SettingsSection from './SettingsSection';
 import SettingsRow from './SettingsRow';
 import Button from '@/components/Common/Button/Button';
+import ConfirmationModal from '@/components/Common/Modals/ConfirmationModal';
 import { CompanionId } from '@/lib/firebase/companion';
 import { UserDocument } from '@/lib/firebase/user';
 import { clearChatHistory } from '@/lib/firebase/chat';
 import { useTimerStore } from '@/lib/stores/timerStore';
+import { getCharacterColors } from '@/components/Common/CharacterColor/CharacterColor';
 
 interface DataSettingsProps {
   userData: UserDocument;
@@ -19,6 +22,7 @@ export default function DataSettings({ userData, companionId }: DataSettingsProp
   const [isClearing, setIsClearing] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [actionType, setActionType] = useState<'clear_chat' | 'export_data' | 'reset_settings'>('clear_chat');
+  const colors = getCharacterColors(companionId);
   
   const handleClearChatHistory = async () => {
     setActionType('clear_chat');
@@ -98,87 +102,111 @@ export default function DataSettings({ userData, companionId }: DataSettingsProp
     }
   };
   
+  // Get modal content based on action type
+  const getModalContent = () => {
+    switch (actionType) {
+      case 'clear_chat':
+        return {
+          title: 'Clear Chat History',
+          message: 'Are you sure you want to clear all chat history with your current companion? This action cannot be undone.',
+          type: 'danger' as const
+        };
+      case 'export_data':
+        return {
+          title: 'Export Your Data',
+          message: 'This will download a copy of your app data. Continue?',
+          type: 'normal' as const
+        };
+      case 'reset_settings':
+        return {
+          title: 'Reset Settings',
+          message: 'Are you sure you want to reset all settings to their default values? This action cannot be undone.',
+          type: 'warning' as const
+        };
+    }
+  };
+  
+  const modalContent = getModalContent();
+  
   return (
     <>
       <SettingsSection
         title="Data Management"
         description="Manage your application data"
         companionId={companionId}
-        icon={<FaDatabase size={20} />}
+        icon={<FaDatabase size={20} style={{ color: colors.primary }} />}
       >
         <div className="space-y-4">
           <SettingsRow 
             title="Clear Chat History"
             description="Delete all chat messages with your current companion"
+            companionId={companionId}
           >
-            <Button
-              label="Clear"
-              onClick={handleClearChatHistory}
-              disabled={isClearing}
-              Icon={FaTrash}
-              companionId={companionId}
-              className="bg-red-50 border-red-200 text-red-500"
-            />
+            <motion.div
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+            >
+              <Button
+                label="Clear"
+                onClick={handleClearChatHistory}
+                disabled={isClearing}
+                Icon={FaTrash}
+                companionId={companionId}
+                className="bg-red-50 border-red-200 text-red-500 shadow-md"
+              />
+            </motion.div>
           </SettingsRow>
           
           <SettingsRow 
             title="Export Your Data"
             description="Download a copy of your app data"
+            companionId={companionId}
           >
-            <Button
-              label="Export"
-              onClick={handleExportData}
-              Icon={FaDownload}
-              companionId={companionId}
-            />
+            <motion.div
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+            >
+              <Button
+                label="Export"
+                onClick={handleExportData}
+                Icon={FaDownload}
+                companionId={companionId}
+                className="shadow-md"
+              />
+            </motion.div>
           </SettingsRow>
           
           <SettingsRow 
             title="Reset Settings"
             description="Restore all settings to default values"
+            companionId={companionId}
           >
-            <Button
-              label="Reset"
-              onClick={handleResetSettings}
-              Icon={FaRedo}
-              companionId={companionId}
-              className="bg-yellow-50 border-yellow-200 text-yellow-600"
-            />
+            <motion.div
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+            >
+              <Button
+                label="Reset"
+                onClick={handleResetSettings}
+                Icon={FaRedo}
+                companionId={companionId}
+                className="bg-yellow-50 border-yellow-200 text-yellow-600 shadow-md"
+              />
+            </motion.div>
           </SettingsRow>
         </div>
       </SettingsSection>
       
-      {/* Confirmation Modal */}
-      {showConfirmModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md mx-4">
-            <h3 className="text-lg font-[Riffic] mb-3">Confirm Action</h3>
-            <p className="text-gray-600 mb-4 font-[Halogen]">
-              {actionType === 'clear_chat' && 'Are you sure you want to clear all chat history with your current companion? This action cannot be undone.'}
-              {actionType === 'export_data' && 'This will download a copy of your app data. Continue?'}
-              {actionType === 'reset_settings' && 'Are you sure you want to reset all settings to their default values? This action cannot be undone.'}
-            </p>
-            <div className="flex justify-end space-x-3">
-              <Button
-                label="Cancel"
-                onClick={() => setShowConfirmModal(false)}
-                companionId={companionId}
-                className="bg-gray-100 border-gray-200 text-gray-600"
-              />
-              <Button
-                label="Confirm"
-                onClick={performConfirmedAction}
-                companionId={companionId}
-                className={
-                  actionType === 'clear_chat' ? 'bg-red-50 border-red-200 text-red-500' :
-                  actionType === 'reset_settings' ? 'bg-yellow-50 border-yellow-200 text-yellow-600' :
-                  ''
-                }
-              />
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Use the new Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={showConfirmModal}
+        title={modalContent?.title || ''}
+        message={modalContent?.message || ''}
+        onConfirm={performConfirmedAction}
+        onCancel={() => setShowConfirmModal(false)}
+        companionId={companionId}
+        type={modalContent?.type || 'normal'}
+      />
     </>
   );
 } 

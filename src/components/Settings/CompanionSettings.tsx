@@ -98,6 +98,8 @@ export default function CompanionSettings({ userData, companionId }: CompanionSe
                   width={96}
                   height={96}
                   className="object-cover w-full h-full"
+                  priority={true}
+                  loading="eager"
                 />
               </div>
               <h3 

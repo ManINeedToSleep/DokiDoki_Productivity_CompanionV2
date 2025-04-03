@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Goal } from '@/lib/firebase/goals';
 import { CompanionId } from '@/lib/firebase/companion';
+import Image from 'next/image';
 
 type GoalAction = 'completed' | 'added' | 'updated' | 'removed' | 'progress';
 
@@ -28,20 +29,21 @@ export default function GoalNotification({
 }: GoalNotificationProps) {
   const [visible, setVisible] = useState(true);
 
+  // Wrap handleClose in useCallback to avoid recreating it on every render
+  const handleClose = useCallback(() => {
+    setVisible(false);
+    if (onClose) {
+      setTimeout(onClose, 300); // Wait for exit animation
+    }
+  }, [onClose]);
+
   // Auto-close after duration
   useEffect(() => {
     const timer = setTimeout(() => {
       handleClose();
     }, duration);
     return () => clearTimeout(timer);
-  }, [duration]);
-
-  const handleClose = () => {
-    setVisible(false);
-    if (onClose) {
-      setTimeout(onClose, 300); // Wait for exit animation
-    }
-  };
+  }, [duration, handleClose]);
 
   // Position styles
   const getPositionStyles = () => {
@@ -180,10 +182,12 @@ export default function GoalNotification({
               {companionId && (
                 <div className="mt-2 pt-2 border-t border-gray-200 flex items-center">
                   <div className="w-6 h-6 relative mr-2">
-                    <img
+                    <Image
                       src={`/images/characters/sprites/${companionId}-Chibi.png`}
                       alt={companionId}
                       className="w-full h-full object-contain"
+                      width={24}
+                      height={24}
                     />
                   </div>
                   <p className="text-xs text-gray-500">

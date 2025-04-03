@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import Card from "@/components/Common/Card/LandingCard";
 import { imagePaths } from "@/components/Common/Paths/ImagePath";
 import Button from "@/components/Common/Button/Button";
 import { useRouter } from "next/navigation";

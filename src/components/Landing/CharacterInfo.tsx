@@ -275,7 +275,10 @@ export default function CharacterInfo({ selectedCharacter }: CharacterInfoProps)
                   <h3 className="text-lg font-[Riffic] mb-2" style={{ color: characterColors.primary }}>
                     Motivation Quote
                   </h3>
-                  <blockquote className="italic text-gray-700 font-[Halogen] relative z-10">
+                  <blockquote 
+                    className="p-3 bg-white/70 rounded-lg italic text-gray-700 relative z-10 font-[Halogen]"
+                    style={{ borderLeft: `3px solid ${characterColors.primary}` }}
+                  >
                     {selectedCharacter === 'sayori' && 
                       "Every small step forward deserves celebration! Let's make productivity joyful, one task at a time!"}
                     {selectedCharacter === 'natsuki' && 
@@ -283,7 +286,7 @@ export default function CharacterInfo({ selectedCharacter }: CharacterInfoProps)
                     {selectedCharacter === 'yuri' && 
                       "True productivity comes from deep focus and understanding. Take the time to fully immerse yourself in your work."}
                     {selectedCharacter === 'monika' && 
-                      "With proper planning and the right mindset, any goal is achievable. Let's optimize your path to success!"}
+                      "Success is about consistency and smart planning. I'll help you organize your goals for maximum efficiency!"}
                   </blockquote>
                   
                   {/* Subtle quote marks in background */}
@@ -291,7 +294,7 @@ export default function CharacterInfo({ selectedCharacter }: CharacterInfoProps)
                     className="absolute right-4 bottom-4 text-6xl opacity-10 font-serif"
                     style={{ color: characterColors.primary }}
                   >
-                    "
+                    &quot;
                   </div>
                 </div>
               </motion.div>

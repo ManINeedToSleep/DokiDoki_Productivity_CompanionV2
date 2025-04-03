@@ -2,13 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { audioPaths } from '@/components/Common/Paths/AudioPath';
-import { 
-  DDLCSoundEffect, 
-  DDLCBackgroundMusic, 
-  getSoundEffectPath, 
-  getBackgroundMusicPath,
-  commonSoundEffects
-} from '@/types/audio';
+import { getBackgroundMusicPath } from '@/types/audio';
 
 // We'll use this in place of the previous SoundEffect type
 export type SoundEffectType = 'hover' | 'click' | 'success' | 'error';
@@ -23,7 +17,7 @@ const soundEffectsMap: Record<SoundEffectType, string> = {
 
 // Audio context for managing sound effects
 let audioContext: AudioContext | null = null;
-let soundEffects: { [key: string]: { buffer: AudioBuffer | null, source: AudioBufferSourceNode | null } } = {};
+const soundEffects: { [key: string]: { buffer: AudioBuffer | null, source: AudioBufferSourceNode | null } } = {};
 
 // Initialize the audio context on user interaction
 const initAudioContext = () => {
@@ -31,7 +25,7 @@ const initAudioContext = () => {
   
   try {
     // Create audio context
-    audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    audioContext = new (window.AudioContext || ((window as unknown) as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
     console.log('Audio context initialized');
     
     // Load sound effects
@@ -49,7 +43,7 @@ const initAudioContext = () => {
           soundEffects[key].buffer = audioBuffer;
           console.log(`Loaded sound effect: ${key}`);
         })
-        .catch(error => {
+        .catch((error: Error) => {
           console.warn(`Failed to load sound effect ${key} from ${path}:`, error);
           
           // Try OGG as fallback
@@ -68,7 +62,7 @@ const initAudioContext = () => {
               soundEffects[key].buffer = audioBuffer;
               console.log(`Loaded fallback sound effect: ${key}`);
             })
-            .catch(fallbackError => {
+            .catch((fallbackError: Error) => {
               console.error(`Failed to load fallback sound effect ${key}:`, fallbackError);
             });
         });
@@ -121,8 +115,9 @@ export default function BackgroundMusic({
   initialVolume = 0.3,
   musicSrc = getBackgroundMusicPath('ddlcMainTheme80s')
 }: BackgroundMusicProps) {
-  const [volume, setVolume] = useState(initialVolume);
-  const [isMuted, setIsMuted] = useState(false);
+  // Use useRef instead of useState for values we don't need to update in the UI
+  const volume = useRef(initialVolume);
+  const isMuted = useRef(false);
   const [isLoaded, setIsLoaded] = useState(false);
   const [audioUnlocked, setAudioUnlocked] = useState(false);
   
@@ -234,7 +229,7 @@ export default function BackgroundMusic({
   useEffect(() => {
     if (!audioRef.current || !isLoaded) return;
     
-    if (musicEnabled && !isMuted) {
+    if (musicEnabled && !isMuted.current) {
       audioRef.current.play().catch(e => {
         console.warn('Auto-play was prevented:', e);
       });
@@ -247,33 +242,23 @@ export default function BackgroundMusic({
   useEffect(() => {
     if (!audioRef.current) return;
     
-    audioRef.current.volume = volume;
+    audioRef.current.volume = volume.current;
     
     // Also update sound effects volume
     Object.values(soundEffectsRef.current).forEach(audio => {
-      audio.volume = volume;
+      audio.volume = volume.current;
     });
   }, [volume]);
-  
-  // Toggle mute/unmute
-  const toggleMute = () => {
-    setIsMuted(!isMuted);
-  };
-  
-  // Adjust volume
-  const adjustVolume = (newVolume: number) => {
-    setVolume(Math.max(0, Math.min(1, newVolume)));
-  };
   
   // Make playSoundEffect available globally
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      (window as any).playSoundEffect = playSoundEffect;
+      (window as unknown as { playSoundEffect: typeof playSoundEffect }).playSoundEffect = playSoundEffect;
     }
     
     return () => {
       if (typeof window !== 'undefined') {
-        delete (window as any).playSoundEffect;
+        delete (window as unknown as { playSoundEffect?: typeof playSoundEffect }).playSoundEffect;
       }
     };
   }, [soundEffectsEnabled]);

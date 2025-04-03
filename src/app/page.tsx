@@ -1,12 +1,11 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { FaVolumeUp, FaVolumeMute, FaChevronDown } from "react-icons/fa";
 import { imagePaths } from "@/components/Common/Paths/ImagePath";
-import { audioPaths } from "@/components/Common/Paths/AudioPath";
 import BackgroundMusic, { playSoundEffect, SoundEffectType } from "@/components/Common/Music/BackgroundMusic";
 import { getBackgroundMusicPath } from "@/types/audio";
 import { CompanionId } from "@/lib/firebase/companion";
@@ -58,26 +57,27 @@ export default function Home() {
   const [selectedCharacter, setSelectedCharacter] = useState<CompanionId | null>(null);
   const [hoveredCharacter, setHoveredCharacter] = useState<CompanionId | null>(null);
   const [musicEnabled, setMusicEnabled] = useState(true);
-  const [isClient, setIsClient] = useState(false);
   const [activeTheme, setActiveTheme] = useState<CompanionId>("sayori");
   const [activeSection, setActiveSection] = useState("home");
   
-  // Section refs for scrolling
-  const sectionRefs = {
-    home: useRef<HTMLDivElement>(null),
-    companions: useRef<HTMLDivElement>(null),
-    features: useRef<HTMLDivElement>(null),
-    testimonials: useRef<HTMLDivElement>(null),
-    about: useRef<HTMLDivElement>(null),
-  };
+  // Create section refs individually first
+  const homeRef = useRef<HTMLDivElement>(null);
+  const companionsRef = useRef<HTMLDivElement>(null);
+  const featuresRef = useRef<HTMLDivElement>(null);
+  const testimonialsRef = useRef<HTMLDivElement>(null);
+  const aboutRef = useRef<HTMLDivElement>(null);
+  
+  // Group refs in a memoized object
+  const sectionRefs = useMemo(() => ({
+    home: homeRef,
+    companions: companionsRef,
+    features: featuresRef,
+    testimonials: testimonialsRef,
+    about: aboutRef,
+  }), []);
   
   // Main container reference for scrolling
   const mainContainerRef = useRef<HTMLDivElement>(null);
-
-  // This effect runs only on client-side to prevent hydration mismatch
-  useEffect(() => {
-    setIsClient(true);
-  }, []);
 
   // Update theme when character is selected
   useEffect(() => {
@@ -265,7 +265,7 @@ export default function Home() {
 
         {/* Hero section */}
         <section 
-          ref={sectionRefs.home}
+          ref={homeRef}
           className="min-h-screen flex flex-col items-center justify-center px-4 pt-16"
           id="home"
         >
@@ -354,7 +354,7 @@ export default function Home() {
 
         {/* Companions section */}
         <section 
-          ref={sectionRefs.companions}
+          ref={companionsRef}
           className="min-h-screen py-16 px-4"
           id="companions"
         >
@@ -493,8 +493,8 @@ export default function Home() {
 
         {/* Features section */}
         <section 
-          ref={sectionRefs.features}
-          className="min-h-screen py-16 px-4 bg-white/30 backdrop-blur-sm"
+          ref={featuresRef}
+          className="min-h-screen py-16 px-4 bg-white/70"
           id="features"
         >
           <div className="container mx-auto">
@@ -561,10 +561,10 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Testimonials section (using Options component content) */}
+        {/* Testimonials section */}
         <section 
-          ref={sectionRefs.testimonials}
-          className="min-h-screen py-16 px-4"
+          ref={testimonialsRef}
+          className="min-h-screen py-16 px-4 bg-gradient-to-b from-white/30 to-white/60"
           id="testimonials"
         >
           <div className="container mx-auto">
@@ -587,7 +587,7 @@ export default function Home() {
               transition={{ delay: 0.2, duration: 0.5 }}
               viewport={{ once: true }}
             >
-              Discover your companions' thoughts on productivity...
+              Discover your companions&apos; thoughts on productivity...
             </motion.p>
             
             <div className="max-w-4xl mx-auto">
@@ -598,8 +598,8 @@ export default function Home() {
 
         {/* About section */}
         <section 
-          ref={sectionRefs.about}
-          className="min-h-screen py-16 px-4 bg-white/30 backdrop-blur-sm"
+          ref={aboutRef}
+          className="min-h-screen py-16 px-4 bg-white/70"
           id="about"
         >
           <div className="container mx-auto">

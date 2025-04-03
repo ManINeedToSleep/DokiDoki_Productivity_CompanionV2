@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CompanionId } from '@/lib/firebase/companion';
+import Image from 'next/image';
 
 interface ReminderNotificationProps {
   title: string;
@@ -29,6 +30,14 @@ export default function ReminderNotification({
 }: ReminderNotificationProps) {
   const [visible, setVisible] = useState(true);
 
+  // Wrap handleClose in useCallback to avoid recreating it on every render
+  const handleClose = useCallback(() => {
+    setVisible(false);
+    if (onClose) {
+      setTimeout(onClose, 300); // Wait for exit animation
+    }
+  }, [onClose]);
+
   // Auto-close after duration if duration > 0
   useEffect(() => {
     if (duration > 0) {
@@ -37,14 +46,7 @@ export default function ReminderNotification({
       }, duration);
       return () => clearTimeout(timer);
     }
-  }, [duration]);
-
-  const handleClose = () => {
-    setVisible(false);
-    if (onClose) {
-      setTimeout(onClose, 300); // Wait for exit animation
-    }
-  };
+  }, [duration, handleClose]);
 
   const handleAction = () => {
     if (onAction) {
@@ -184,10 +186,12 @@ export default function ReminderNotification({
               {companionId && (
                 <div className="flex items-start mb-3">
                   <div className="w-12 h-12 relative mr-3 flex-shrink-0">
-                    <img
+                    <Image
                       src={`/images/characters/sprites/${companionId}-Chibi.png`}
                       alt={companionId}
                       className="w-full h-full object-contain"
+                      width={48}
+                      height={48}
                     />
                   </div>
                   <p className="text-sm text-gray-700">{message}</p>

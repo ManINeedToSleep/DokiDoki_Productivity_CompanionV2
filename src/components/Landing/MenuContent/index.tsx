@@ -2,7 +2,7 @@
 
 import dynamic from 'next/dynamic';
 import { motion } from 'framer-motion';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { CompanionId } from '@/lib/firebase/companion';
 import { getCharacterColors } from '@/components/Common/CharacterColor/CharacterColor';
 
@@ -20,38 +20,44 @@ interface MenuContentProps {
 
 export default function MenuContent({ selectedItem, onCharacterSelect }: MenuContentProps) {
   const [activeCharacter, setActiveCharacter] = useState<CompanionId>('sayori');
+  
+  // Store the original onCharacterSelect function in a ref
+  const onCharacterSelectRef = useRef(onCharacterSelect);
+  
+  // Get theme colors based on active character
   const themeColors = getCharacterColors(activeCharacter);
+  
+  // Define the theme change handler outside useEffect
+  const handleThemeChange = useCallback((characterId: string | null) => {
+    if (characterId && ['sayori', 'natsuki', 'yuri', 'monika'].includes(characterId)) {
+      setActiveCharacter(characterId as CompanionId);
+    }
+  }, []);
+  
+  // Create a wrapped character select function that also updates theme
+  const wrappedOnCharacterSelect = useCallback((characterId: string | null) => {
+    handleThemeChange(characterId);
+    onCharacterSelectRef.current(characterId);
+  }, [handleThemeChange]);
   
   // Update the theme colors based on character selection
   useEffect(() => {
-    const handleThemeChange = (characterId: string | null) => {
-      if (characterId && ['sayori', 'natsuki', 'yuri', 'monika'].includes(characterId)) {
-        setActiveCharacter(characterId as CompanionId);
-      }
-    };
-    
-    // Add an event listener for character selection
-    const origOnCharacterSelect = onCharacterSelect;
-    onCharacterSelect = (characterId) => {
-      handleThemeChange(characterId);
-      origOnCharacterSelect(characterId);
-    };
-    
-    return () => {
-      // Clean up
-      onCharacterSelect = origOnCharacterSelect;
-    };
+    // Update ref when onCharacterSelect prop changes
+    onCharacterSelectRef.current = onCharacterSelect;
   }, [onCharacterSelect]);
   
   const renderContent = () => {
     switch (selectedItem) {
       case 'new-game':
-        return <NewGame onCharacterSelect={onCharacterSelect} />;
+        return <NewGame onCharacterSelect={wrappedOnCharacterSelect} />;
       case 'load-game':
         return <LoadGame />;
       case 'options':
         return <Options onCharacterSelect={(id) => {
-          if (id) setActiveCharacter(id as CompanionId);
+          if (id) {
+            handleThemeChange(id);
+            onCharacterSelectRef.current(id);
+          }
         }} />;
       case 'help':
         return <Help />;
@@ -71,6 +77,10 @@ export default function MenuContent({ selectedItem, onCharacterSelect }: MenuCon
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
       transition={{ duration: 0.3 }}
+      style={{ 
+        // Use theme colors in the component styling
+        backgroundColor: `${themeColors.primary}05`
+      }}
     >
       {renderContent()}
     </motion.div>

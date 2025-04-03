@@ -57,20 +57,6 @@ export default function GoalSettings({ userData, companionId }: GoalSettingsProp
     }
   };
   
-  // Format minutes to hours and minutes
-  const formatTimeDisplay = (minutes: number) => {
-    const hours = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    
-    if (hours === 0) {
-      return `${mins} minutes`;
-    } else if (mins === 0) {
-      return `${hours} hour${hours > 1 ? 's' : ''}`;
-    } else {
-      return `${hours} hour${hours > 1 ? 's' : ''} ${mins} minute${mins > 1 ? 's' : ''}`;
-    }
-  };
-  
   return (
     <SettingsSection
       title="Focus Goals"

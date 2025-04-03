@@ -59,6 +59,11 @@ export interface UserDocument {
       accentColor: string;
       backgroundId: string;
     };
+    audioSettings: {
+      musicEnabled: boolean;
+      soundEffectsEnabled: boolean;
+      volume: number;
+    };
   };
   companions: {
     [companionId: string]: {
@@ -141,6 +146,11 @@ export const createUserDocument = async (
           darkMode: true,
           accentColor: '#FF80AB', // Default pink accent
           backgroundId: 'default',
+        },
+        audioSettings: {
+          musicEnabled: true,
+          soundEffectsEnabled: true,
+          volume: 0.5,
         },
       },
       companions: {
@@ -225,6 +235,11 @@ export const getUserDocument = async (uid: string): Promise<UserDocument | null>
           darkMode: true,
           accentColor: '#FF80AB',
           backgroundId: 'default',
+        },
+        audioSettings: userData.settings.audioSettings || {
+          musicEnabled: true,
+          soundEffectsEnabled: true,
+          volume: 0.5,
         },
       },
       focusStats: {
@@ -328,6 +343,20 @@ export const updateThemeSettings = async (
   const userRef = doc(db, 'users', uid);
   await updateDoc(userRef, {
     'settings.theme': theme,
+  });
+};
+
+export const updateAudioSettings = async (
+  uid: string,
+  settings: {
+    musicEnabled: boolean;
+    soundEffectsEnabled: boolean;
+    volume: number;
+  }
+): Promise<void> => {
+  const userRef = doc(db, 'users', uid);
+  await updateDoc(userRef, {
+    'settings.audioSettings': settings,
   });
 };
 

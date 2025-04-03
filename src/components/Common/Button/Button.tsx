@@ -3,6 +3,7 @@
 import { CSSProperties } from 'react';
 import { CompanionId } from '@/lib/firebase/companion';
 import { IconType } from 'react-icons/lib';
+import { useAudio } from '@/lib/contexts/AudioContext';
 
 export interface ButtonProps {
   label: string;
@@ -25,6 +26,9 @@ export default function Button({
   companionId = 'sayori',
   Icon
 }: ButtonProps) {
+  // Get audio context for sound effects
+  const { playSoundEffect, isSoundEffectsEnabled } = useAudio();
+  
   // Get character-specific colors
   const getCharacterColors = (id: CompanionId) => {
     switch (id) {
@@ -67,11 +71,36 @@ export default function Button({
   };
 
   const colors = getCharacterColors(companionId);
+  
+  // Handle click with sound effect
+  const handleClick = () => {
+    if (disabled) return;
+    
+    // Play sound effect if enabled
+    if (isSoundEffectsEnabled) {
+      playSoundEffect('select');
+    }
+    
+    // Call the original onClick handler if provided
+    if (onClick) {
+      onClick();
+    }
+  };
+  
+  // Handle hover with sound effect - only if not disabled
+  const handleMouseEnter = () => {
+    if (disabled) return;
+    
+    if (isSoundEffectsEnabled) {
+      playSoundEffect('hover');
+    }
+  };
 
   return (
     <button
       type={type}
-      onClick={onClick}
+      onClick={handleClick}
+      onMouseEnter={handleMouseEnter}
       disabled={disabled}
       style={{
         backgroundColor: colors.bg,
