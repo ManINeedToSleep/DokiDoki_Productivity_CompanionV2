@@ -1,15 +1,12 @@
  "use client";
 
 import React from 'react';
-import { usePathname } from 'next/navigation';
 
 export default function CompanionLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const pathname = usePathname();
-  const isCompanionPage = pathname === '/dashboard/companion';
 
   // This layout will override the dashboard layout for the companion page
   return (

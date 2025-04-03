@@ -8,6 +8,7 @@ import Button from '@/components/Common/Button/Button';
 import { CompanionId } from '@/lib/firebase/companion';
 import { UserDocument } from '@/lib/firebase/user';
 import { clearChatHistory } from '@/lib/firebase/chat';
+import { useTimerStore } from '@/lib/stores/timerStore';
 
 interface DataSettingsProps {
   userData: UserDocument;
@@ -79,8 +80,21 @@ export default function DataSettings({ userData, companionId }: DataSettingsProp
         alert('Error exporting data');
       }
     } else if (actionType === 'reset_settings') {
-      // In a real implementation, this would reset settings to defaults
-      alert('This feature is not yet implemented');
+      try {
+        // Reset all application settings to default values
+        localStorage.clear();
+        
+        // Reset timer store to defaults
+        useTimerStore.getState().resetTimer();
+        
+        // Force page reload to apply changes
+        window.location.reload();
+        
+        alert('Settings have been reset to default values. The page will reload.');
+      } catch (error) {
+        console.error('Error resetting settings:', error);
+        alert('Error resetting settings');
+      }
     }
   };
   

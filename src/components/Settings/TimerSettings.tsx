@@ -7,9 +7,9 @@ import SettingsRow from './SettingsRow';
 import Toggle from '@/components/Common/Toggle/Toggle';
 import Button from '@/components/Common/Button/Button';
 import { CompanionId } from '@/lib/firebase/companion';
-import { UserDocument, updateTimerSettings } from '@/lib/firebase/user';
+import { UserDocument } from '@/lib/firebase/user';
 import { getCharacterColors } from '@/components/Common/CharacterColor/CharacterColor';
-import { useChatStore } from '@/lib/stores/chatStore';
+import { useTimerStore } from '@/lib/stores/timerStore';
 
 interface TimerSettingsProps {
   userData: UserDocument;
@@ -17,57 +17,79 @@ interface TimerSettingsProps {
 }
 
 export default function TimerSettings({ userData, companionId }: TimerSettingsProps) {
-  const [workDuration, setWorkDuration] = useState(25);
-  const [shortBreakDuration, setShortBreakDuration] = useState(5);
-  const [longBreakDuration, setLongBreakDuration] = useState(15);
-  const [longBreakInterval, setLongBreakInterval] = useState(4);
-  const [autoStartBreaks, setAutoStartBreaks] = useState(false);
-  const [autoStartPomodoros, setAutoStartPomodoros] = useState(false);
-  const [notifications, setNotifications] = useState(true);
+  const { settings, syncWithFirebase } = useTimerStore();
   const [isUpdating, setIsUpdating] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
   
-  // Get the sync function from the chat store
-  const { syncWithFirebase } = useChatStore();
+  // Local state for UI
+  const [workMinutes, setWorkMinutes] = useState(Math.floor(settings.workDuration / 60));
+  const [shortBreakMinutes, setShortBreakMinutes] = useState(Math.floor(settings.breakDuration / 60));
+  const [longBreakMinutes, setLongBreakMinutes] = useState(Math.floor(settings.longBreakDuration / 60));
+  const [longBreakInterval, setLongBreakInterval] = useState(settings.sessionsBeforeLongBreak);
+  
+  // Additional settings for compatibility with Firebase model
+  const [autoStartBreaks, setAutoStartBreaks] = useState(false);
+  const [autoStartPomodoros, setAutoStartPomodoros] = useState(false);
+  const [notifications, setNotifications] = useState(true);
+  
   const colors = getCharacterColors(companionId);
   
-  // Initialize values from user data
+  // Initialize values from user data or store
   useEffect(() => {
     if (userData && userData.settings.timerSettings) {
-      const settings = userData.settings.timerSettings;
-      setWorkDuration(settings.workDuration);
-      setShortBreakDuration(settings.shortBreakDuration);
-      setLongBreakDuration(settings.longBreakDuration);
-      setLongBreakInterval(settings.longBreakInterval);
-      setAutoStartBreaks(settings.autoStartBreaks);
-      setAutoStartPomodoros(settings.autoStartPomodoros);
-      setNotifications(settings.notifications);
+      const dbSettings = userData.settings.timerSettings;
+      
+      // Update local state
+      setWorkMinutes(dbSettings.workDuration);
+      setShortBreakMinutes(dbSettings.shortBreakDuration);
+      setLongBreakMinutes(dbSettings.longBreakDuration);
+      setLongBreakInterval(dbSettings.longBreakInterval);
+      setAutoStartBreaks(dbSettings.autoStartBreaks);
+      setAutoStartPomodoros(dbSettings.autoStartPomodoros);
+      setNotifications(dbSettings.notifications);
+      
+      // Update store with Firestore values if different from current store
+      const storeWorkMinutes = Math.floor(settings.workDuration / 60);
+      const storeShortBreakMinutes = Math.floor(settings.breakDuration / 60);
+      const storeLongBreakMinutes = Math.floor(settings.longBreakDuration / 60);
+      
+      if (dbSettings.workDuration !== storeWorkMinutes ||
+          dbSettings.shortBreakDuration !== storeShortBreakMinutes ||
+          dbSettings.longBreakDuration !== storeLongBreakMinutes ||
+          dbSettings.longBreakInterval !== settings.sessionsBeforeLongBreak) {
+        
+        // Update the timer store
+        useTimerStore.setState({
+          settings: {
+            workDuration: dbSettings.workDuration * 60,
+            breakDuration: dbSettings.shortBreakDuration * 60,
+            longBreakDuration: dbSettings.longBreakDuration * 60,
+            sessionsBeforeLongBreak: dbSettings.longBreakInterval
+          },
+          userId: userData.base.uid
+        });
+      }
     }
-  }, [userData]);
+  }, [userData, settings]);
   
-  // Check for changes
+  // Check for changes compared to the current settings in the store
   useEffect(() => {
-    if (userData && userData.settings.timerSettings) {
-      const settings = userData.settings.timerSettings;
-      setHasChanges(
-        workDuration !== settings.workDuration ||
-        shortBreakDuration !== settings.shortBreakDuration ||
-        longBreakDuration !== settings.longBreakDuration ||
-        longBreakInterval !== settings.longBreakInterval ||
-        autoStartBreaks !== settings.autoStartBreaks ||
-        autoStartPomodoros !== settings.autoStartPomodoros ||
-        notifications !== settings.notifications
-      );
-    }
+    const storeWorkMinutes = Math.floor(settings.workDuration / 60);
+    const storeShortBreakMinutes = Math.floor(settings.breakDuration / 60);
+    const storeLongBreakMinutes = Math.floor(settings.longBreakDuration / 60);
+    
+    setHasChanges(
+      workMinutes !== storeWorkMinutes ||
+      shortBreakMinutes !== storeShortBreakMinutes ||
+      longBreakMinutes !== storeLongBreakMinutes ||
+      longBreakInterval !== settings.sessionsBeforeLongBreak
+    );
   }, [
-    userData,
-    workDuration,
-    shortBreakDuration,
-    longBreakDuration,
-    longBreakInterval,
-    autoStartBreaks,
-    autoStartPomodoros,
-    notifications
+    settings,
+    workMinutes,
+    shortBreakMinutes,
+    longBreakMinutes,
+    longBreakInterval
   ]);
   
   const handleSaveChanges = async () => {
@@ -76,28 +98,25 @@ export default function TimerSettings({ userData, companionId }: TimerSettingsPr
     setIsUpdating(true);
     
     try {
-      // First update the timer settings in the database
-      await updateTimerSettings(userData.base.uid, {
-        workDuration,
-        shortBreakDuration,
-        longBreakDuration,
-        longBreakInterval,
-        autoStartBreaks,
-        autoStartPomodoros,
-        notifications
+      // Update store with new values
+      useTimerStore.setState({
+        settings: {
+          workDuration: workMinutes * 60,
+          breakDuration: shortBreakMinutes * 60,
+          longBreakDuration: longBreakMinutes * 60,
+          sessionsBeforeLongBreak: longBreakInterval
+        },
+        userId: userData.base.uid
       });
       
-      // Success
+      // Sync with Firebase
+      await syncWithFirebase(userData.base.uid);
+      
+      // Update UI state
       setHasChanges(false);
       
-      // Make sure any unsaved chat data is synced with Firebase
-      await syncWithFirebase(userData.base.uid, true);
-      
-      // Clear cached timer data from local storage
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('timerStore');
-        window.location.href = '/dashboard/timer';
-      }
+      // Show success message or notification
+      console.log('Timer settings saved successfully!');
     } catch (error) {
       console.error('Error updating timer settings:', error);
     } finally {
@@ -122,8 +141,8 @@ export default function TimerSettings({ userData, companionId }: TimerSettingsPr
             min={5}
             max={60}
             step={5}
-            value={workDuration}
-            onChange={(e) => setWorkDuration(parseInt(e.target.value) || 25)}
+            value={workMinutes}
+            onChange={(e) => setWorkMinutes(parseInt(e.target.value) || 25)}
             className="w-20 p-2 border rounded-md text-center font-[Halogen]"
             style={{ 
               borderColor: colors.primary, 
@@ -142,8 +161,8 @@ export default function TimerSettings({ userData, companionId }: TimerSettingsPr
             min={1}
             max={15}
             step={1}
-            value={shortBreakDuration}
-            onChange={(e) => setShortBreakDuration(parseInt(e.target.value) || 5)}
+            value={shortBreakMinutes}
+            onChange={(e) => setShortBreakMinutes(parseInt(e.target.value) || 5)}
             className="w-20 p-2 border rounded-md text-center font-[Halogen]"
             style={{ 
               borderColor: colors.primary, 
@@ -162,8 +181,8 @@ export default function TimerSettings({ userData, companionId }: TimerSettingsPr
             min={5}
             max={30}
             step={5}
-            value={longBreakDuration}
-            onChange={(e) => setLongBreakDuration(parseInt(e.target.value) || 15)}
+            value={longBreakMinutes}
+            onChange={(e) => setLongBreakMinutes(parseInt(e.target.value) || 15)}
             className="w-20 p-2 border rounded-md text-center font-[Halogen]"
             style={{ 
               borderColor: colors.primary, 

@@ -12,7 +12,7 @@ import { getAllChatMessagesForDebugging, clearChatHistory } from '@/lib/firebase
 import { auth } from '@/lib/firebase';
 import { FaSync, FaWrench } from 'react-icons/fa';
 import Image from 'next/image';
-import { getCompanionFullImagePath } from '@/components/Common/Paths/ImagePath';
+import { getCompanionChibiPath } from '@/components/Common/Paths/ImagePath';
 
 interface ChatContainerProps {
   companionId: CompanionId;
@@ -240,11 +240,11 @@ export default function ChatContainer({
       <div className="flex justify-between items-center mb-6">
         <div className="flex items-center">
           <Image 
-            src={getCompanionFullImagePath(companionId)}
+            src={getCompanionChibiPath(companionId)}
             alt={companionName}
-            width={40}
-            height={40}
-            className="rounded-full border-2 mr-3 object-cover"
+            width={60}
+            height={60}
+            className="rounded-full border-4 mr-3 object-cover"
             style={{ borderColor: colors.primary }}
           />
           <h1 className="text-2xl font-[Riffic]" style={{ color: colors.heading }}>

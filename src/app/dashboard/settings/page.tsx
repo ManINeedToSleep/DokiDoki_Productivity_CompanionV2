@@ -9,7 +9,6 @@ import { CompanionId } from '@/lib/firebase/companion';
 import { getCharacterDotColor, getCharacterColors } from '@/components/Common/CharacterColor/CharacterColor';
 import CompanionSettings from '@/components/Settings/CompanionSettings';
 import TimerSettings from '@/components/Settings/TimerSettings';
-import GoalSettings from '@/components/Settings/GoalSettings';
 import DataSettings from '@/components/Settings/DataSettings';
 
 export default function SettingsPage() {
@@ -72,11 +71,6 @@ export default function SettingsPage() {
           />
           
           <TimerSettings 
-            userData={userData} 
-            companionId={selectedCompanion as CompanionId}
-          />
-          
-          <GoalSettings 
             userData={userData} 
             companionId={selectedCompanion as CompanionId}
           />
