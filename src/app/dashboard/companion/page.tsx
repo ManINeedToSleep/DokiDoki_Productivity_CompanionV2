@@ -9,6 +9,9 @@ import { getCharacterColors } from '@/components/Common/CharacterColor/Character
 import Image from 'next/image';
 import { motion } from 'framer-motion';
 import { FaHeart, FaClock, FaCalendarAlt, FaTrophy, FaArrowLeft, FaCog } from 'react-icons/fa';
+import { useAudio } from '@/lib/contexts/AudioContext';
+import AudioControls from '@/components/Common/Audio/AudioControls';
+import { DDLCBackgroundMusic } from '@/types/audio';
 
 // Visual Novel style background component with pattern overlay
 const VisualNovelBackground = ({ companionId }: { companionId: CompanionId }) => {
@@ -38,6 +41,7 @@ const VisualNovelBackground = ({ companionId }: { companionId: CompanionId }) =>
         src={background}
         alt="Background"
         fill
+        sizes="100vw"
         className="object-cover"
         priority
       />
@@ -163,6 +167,7 @@ export default function CompanionDashboard() {
   const [isLoadingData, setIsLoadingData] = useState(true);
   const [greeting, setGreeting] = useState<string>("");
   const [showStatsPanel, setShowStatsPanel] = useState(false);
+  const { playMusic, playSoundEffect } = useAudio();
   
   // Generic dialogue options - these would ideally come from a dialogue system
   const [dialogueOptions] = useState<{text: string, response: string}[]>([
@@ -212,8 +217,25 @@ export default function CompanionDashboard() {
     }
   }, [user, isLoading, router]);
   
-  // Handle dialogue option click
+  // Play character-specific music when companion loads
+  useEffect(() => {
+    // Each character can have a different preferred BGM
+    const characterMusic: {[key in CompanionId]: DDLCBackgroundMusic} = {
+      'sayori': 'ddlcMainTheme80s',
+      'natsuki': 'ddlcMainTheme80s',
+      'yuri': 'monikasLullaby',
+      'monika': 'runereality'
+    };
+    
+    if (!isLoadingData && companionId) {
+      // Play the character's preferred music
+      playMusic(characterMusic[companionId]);
+    }
+  }, [companionId, isLoadingData, playMusic]);
+  
+  // Handle dialogue option click with sound
   const handleDialogueOptionClick = (response: string) => {
+    playSoundEffect('select');
     setSelectedResponse(response);
     
     // In a real implementation, you might want to:
@@ -223,8 +245,9 @@ export default function CompanionDashboard() {
     // 4. Unlock special events
   };
   
-  // Handle the back button click
+  // Handle the back button click with sound
   const handleBackClick = () => {
+    playSoundEffect('select');
     router.push('/dashboard');
   };
   
@@ -291,15 +314,21 @@ export default function CompanionDashboard() {
             </h1>
           </div>
           
-          {/* Settings button - like the first reference */}
-          <motion.div
-            className="flex items-center justify-center w-14 h-14 bg-green-400 text-white rounded-md shadow-md"
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => router.push('/dashboard/settings')}
-          >
-            <FaCog size={24} />
-          </motion.div>
+          {/* Settings and Audio controls */}
+          <div className="flex items-center space-x-2">
+            {/* Audio Controls */}
+            <AudioControls characterId={companionId} isMinimal={true} />
+            
+            {/* Settings button */}
+            <motion.div
+              className="flex items-center justify-center w-14 h-14 bg-green-400 text-white rounded-md shadow-md"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => router.push('/dashboard/settings')}
+            >
+              <FaCog size={24} />
+            </motion.div>
+          </div>
         </div>
         
         {/* Main content area */}
@@ -316,6 +345,7 @@ export default function CompanionDashboard() {
                 src={`/images/characters/sprites/${companionId}-happy.png`}
                 alt={companionId}
                 fill
+                sizes="(max-width: 768px) 100vw, 450px"
                 className="object-contain"
                 priority
               />

@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import Card from "@/components/Common/Card/LandingCard";
+import { CompanionId } from "@/lib/firebase/companion";
+import { getCharacterColors } from "@/components/Common/CharacterColor/CharacterColor";
+import { useAudio } from "@/lib/contexts/AudioContext";
 
 interface Testament {
   id: string;
@@ -138,83 +140,109 @@ const testaments: Testament[] = [
   }
 ];
 
-export default function Options() {
+interface OptionsProps {
+  onCharacterSelect?: (characterId: CompanionId) => void;
+}
+
+export default function Options({ onCharacterSelect }: OptionsProps) {
   const [selectedTestament, setSelectedTestament] = useState<string | null>(null);
+  const { playSoundEffect } = useAudio();
+  
+  const handleTestamentSelect = (id: string) => {
+    // Play selection sound
+    playSoundEffect('select');
+    
+    setSelectedTestament(id);
+    
+    // If onCharacterSelect is provided, call it
+    if (onCharacterSelect && id) {
+      onCharacterSelect(id as CompanionId);
+    }
+  };
+
+  const handleTestamentHover = () => {
+    // Play hover sound
+    playSoundEffect('hover');
+  };
 
   return (
-    <Card>
-      <div className="p-6">
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="text-center mb-8"
-        >
-          <h2 className="text-3xl font-[Riffic] text-pink-700 mb-4">Character Testaments</h2>
-          <p className="text-pink-500 italic">Discover your companions&apos; thoughts on productivity...</p>
-        </motion.div>
-
-        <div className="grid grid-cols-2 gap-4 mb-6">
-          {testaments.map((testament) => (
+    <div className="p-6 bg-white/90 backdrop-blur-sm rounded-xl shadow-lg">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        {testaments.map((testament) => {
+          const colors = getCharacterColors(testament.id as CompanionId);
+          return (
             <motion.button
               key={testament.id}
               className={`p-4 rounded-lg transition-all text-left
                 ${selectedTestament === testament.id 
-                  ? 'ring-2 ring-pink-500 shadow-lg' 
-                  : 'hover:ring-1 hover:ring-pink-300 hover:shadow-md'
+                  ? 'ring-2 shadow-lg' 
+                  : 'hover:ring-1 hover:shadow-md'
                 }
               `}
               style={{
-                backgroundColor: testament.style.bgColor
+                backgroundColor: testament.style.bgColor,
+                borderColor: colors.primary
               }}
-              onClick={() => setSelectedTestament(testament.id)}
+              onClick={() => handleTestamentSelect(testament.id)}
+              onMouseEnter={handleTestamentHover}
               whileHover={{ scale: 1.02 }}
             >
               <h3 className="text-xl mb-1" style={{ color: testament.style.color }}>
                 {testament.character}
               </h3>
-              <p className="text-sm text-pink-800">
+              <p className="text-sm" style={{ color: colors.text }}>
                 &quot;{testament.title}&quot;
               </p>
             </motion.button>
-          ))}
-        </div>
+          );
+        })}
+      </div>
 
-        <AnimatePresence mode="wait">
-          {selectedTestament && (
-            <motion.div
-              key={selectedTestament}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="rounded-lg p-6 relative"
+      <AnimatePresence mode="wait">
+        {selectedTestament && (
+          <motion.div
+            key={selectedTestament}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="rounded-lg p-6 relative"
+            style={{
+              backgroundColor: testaments.find(t => t.id === selectedTestament)?.style.bgColor,
+              backgroundImage: `
+                linear-gradient(transparent 0px, transparent 23px, #d6d6d6 24px),
+                linear-gradient(90deg, #f2f2f2 0px, #f2f2f2 1px, transparent 2px)
+              `,
+              backgroundSize: '100% 24px, 100% 24px',
+              padding: '24px 32px',
+              boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.05)'
+            }}
+          >
+            <div className="absolute left-0 top-0 bottom-0 w-[1px] bg-pink-200 ml-8" />
+            <pre 
+              className="whitespace-pre-line relative"
               style={{
-                backgroundColor: testaments.find(t => t.id === selectedTestament)?.style.bgColor,
-                backgroundImage: `
-                  linear-gradient(transparent 0px, transparent 23px, #d6d6d6 24px),
-                  linear-gradient(90deg, #f2f2f2 0px, #f2f2f2 1px, transparent 2px)
-                `,
-                backgroundSize: '100% 24px, 100% 24px',
-                padding: '24px 32px',
-                boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.05)'
+                fontFamily: testaments.find(t => t.id === selectedTestament)?.style.fontFamily,
+                fontSize: testaments.find(t => t.id === selectedTestament)?.style.fontSize,
+                color: testaments.find(t => t.id === selectedTestament)?.style.color,
+                lineHeight: '24px',
+                paddingLeft: '24px'
               }}
             >
-              <div className="absolute left-0 top-0 bottom-0 w-[1px] bg-pink-200 ml-8" />
-              <pre 
-                className="whitespace-pre-line relative"
-                style={{
-                  fontFamily: testaments.find(t => t.id === selectedTestament)?.style.fontFamily,
-                  fontSize: testaments.find(t => t.id === selectedTestament)?.style.fontSize,
-                  color: testaments.find(t => t.id === selectedTestament)?.style.color,
-                  lineHeight: '24px',
-                  paddingLeft: '24px'
-                }}
-              >
-                {testaments.find(t => t.id === selectedTestament)?.content}
-              </pre>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-    </Card>
+              {testaments.find(t => t.id === selectedTestament)?.content}
+            </pre>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      
+      {!selectedTestament && (
+        <motion.div 
+          className="text-center p-8 italic text-gray-500"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+        >
+          Click on a character to read their thoughts on productivity
+        </motion.div>
+      )}
+    </div>
   );
 }
